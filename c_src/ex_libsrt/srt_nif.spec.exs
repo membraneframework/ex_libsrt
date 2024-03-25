@@ -21,8 +21,10 @@ spec stop_server(state) :: (:ok :: label)
 
 # spec start_client(host :: string, port :: int, stream_id :: string) :: {:ok :: label, state} | {:error :: label, reason :: string}
 
-# sends {:client_connected :: label, streamid :: string, conn :: int}
-sends {:srt_client_connected :: label, conn :: int}
-sends {:srt_client_disconnected:: label, conn :: int}
-sends {:srt_connection_error :: label, conn :: int, error :: string}
+sends {:srt_server_new_conn :: label, conn :: int}
+sends {:srt_server_conn_closed:: label, conn :: int}
+sends {:srt_server_error :: label, conn :: int, error :: string}
 sends {:srt_data :: label, conn :: int, data :: payload}
+
+sends :srt_client_connected :: label
+sends :srt_client_disconnected :: label

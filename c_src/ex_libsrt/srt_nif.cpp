@@ -44,11 +44,11 @@ UNIFEX_TERM start_server(UnifexEnv* env, char* address, int port) {
     state->server->Initialize(address, port);
 
     state->server->SetOnSocketConnected([=](Server::SrtSocket socket) {
-      send_srt_client_connected(state->env, state->owner, 1, socket);
+      send_srt_server_new_conn(state->env, state->owner, 1, socket);
     });
 
     state->server->SetOnSocketDisconnected([=](Server::SrtSocket socket) {
-      send_srt_client_disconnected(state->env, state->owner, 1, socket);
+      send_srt_server_conn_closed(state->env, state->owner, 1, socket);
     });
 
     state->server->SetOnSocketData([=](Server::SrtSocket socket, const char* data, int len) {
@@ -95,7 +95,7 @@ UNIFEX_TERM close_server_connection(UnifexEnv* env, int conn_id, UnifexState* st
   return close_server_connection_result_ok(env);
 }
 
-UNIFEX_TERM start_client(UnifexEnv* env, char* server_address, int port) {
+// UNIFEX_TERM start_client(UnifexEnv* env, char* server_address, int port) {
 
-  return start_client_result_ok(env);
-}
+//   return start_client_result_ok(env);
+// }
