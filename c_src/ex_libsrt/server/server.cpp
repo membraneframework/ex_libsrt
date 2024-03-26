@@ -4,7 +4,7 @@
 #include <string>
 #include <unifex/unifex.h>
 
-void Server::Initialize(const char* address, int port) {
+void Server::Run(const char* address, int port) {
   srt_sock = srt_create_socket();
   if (srt_sock == SRT_ERROR) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
@@ -43,12 +43,10 @@ void Server::Initialize(const char* address, int port) {
 
   // TODO: this must be a lambda embedding 'this'
   // srt_listen_callback(srt_socket, &OnNewConnection, NULL);
-}
 
-void Server::Run() {
-    running.store(true);
+  running.store(true);
 
-    epoll_loop = std::thread(&Server::RunEpoll, this);
+  epoll_loop = std::thread(&Server::RunEpoll, this);
 }
 
 void Server::Stop() {
@@ -57,6 +55,7 @@ void Server::Stop() {
     epoll_loop.join();
   }
 
+  srt_epoll_release(epoll);
   srt_close(srt_sock);
 }
 
@@ -66,22 +65,34 @@ void Server::CloseConnection(int connection_id) {
 }
 
 void Server::RunEpoll() {
-   int srtrfdslenmax = 100;
-   SrtSocket sockets[srtrfdslenmax];
+   int sockets_len = 100;
+   SrtSocket sockets[sockets_len];
+
+   int broken_sockets_len = 100;
+   SrtSocket broken_sockets[broken_sockets_len];
 
     while (running.load()) {
-      int n = srt_epoll_wait(epoll, &sockets[0], &srtrfdslenmax, 0, 0, 1000, 0, 0, 0, 0); 
+      sockets_len = 100;
+      broken_sockets_len = 100;
 
-      for (int i = 0; i < n; i++) {
+      int n = srt_epoll_wait(epoll, &sockets[0], &sockets_len, &broken_sockets[0], &broken_sockets_len, 1000, 0, 0, 0, 0); 
+
+      if (n < 1) {
+        continue;
+      }
+
+      for (int i = 0; i < sockets_len; i++) {
         if (IsListeningSocket(sockets[i])) {
           AcceptConnection();
-        } else if (IsSocketBroken(sockets[i])) {
-          DisconnectSocket(sockets[i]);
-        } else if (IsSocketClosed(sockets[i])) {
+        } else if (IsSocketBroken(sockets[i]) || IsSocketClosed(sockets[i])) {
           DisconnectSocket(sockets[i]);
         } else {
           ReadSocketData(sockets[i]);
         }
+      }
+
+      for (int i = 0; i < broken_sockets_len; i++) {
+        DisconnectSocket(broken_sockets[i]);
       }
     }
 }
@@ -111,7 +122,11 @@ void Server::ReadSocketData(Server::SrtSocket socket) {
 
   int n = srt_recv(socket, buffer, sizeof(buffer));
 
-  this->on_socket_data(socket, buffer, n);
+  if (n == 0 || n == SRT_ERROR) {
+    DisconnectSocket(socket);
+  } else {
+    this->on_socket_data(socket, buffer, n);
+  }
 }
 
 void Server::AcceptConnection() {

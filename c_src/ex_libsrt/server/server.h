@@ -20,8 +20,7 @@ public:
     Server() = default;
     ~Server() = default;
 
-    void Initialize(const char *address, int port);
-    void Run();
+    void Run(const char *address, int port);
     void Stop();
     void CloseConnection(int connection_id);
 
