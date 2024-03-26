@@ -1,5 +1,6 @@
 #include "server.h"
 
+#include <chrono>
 #include <exception>
 #include <string>
 #include <unifex/unifex.h>
@@ -39,10 +40,10 @@ void Server::Run(const char* address, int port) {
 
   const int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
   srt_epoll_add_usock(epoll, srt_sock, &read_modes);
-  
 
-  // TODO: this must be a lambda embedding 'this'
-  // srt_listen_callback(srt_socket, &OnNewConnection, NULL);
+  srt_listen_callback(srt_sock,
+                      (srt_listen_callback_fn*)&Server::ListenAcceptCallback,
+                      (void*)this);
 
   running.store(true);
 
@@ -65,36 +66,107 @@ void Server::CloseConnection(int connection_id) {
 }
 
 void Server::RunEpoll() {
-   int sockets_len = 100;
-   SrtSocket sockets[sockets_len];
+  int sockets_len = 100;
+  SrtSocket sockets[sockets_len];
 
-   int broken_sockets_len = 100;
-   SrtSocket broken_sockets[broken_sockets_len];
+  int broken_sockets_len = 100;
+  SrtSocket broken_sockets[broken_sockets_len];
 
-    while (running.load()) {
-      sockets_len = 100;
-      broken_sockets_len = 100;
+  while (running.load()) {
+    sockets_len = 100;
+    broken_sockets_len = 100;
 
-      int n = srt_epoll_wait(epoll, &sockets[0], &sockets_len, &broken_sockets[0], &broken_sockets_len, 1000, 0, 0, 0, 0); 
+    int n = srt_epoll_wait(epoll,
+                           &sockets[0],
+                           &sockets_len,
+                           &broken_sockets[0],
+                           &broken_sockets_len,
+                           1000,
+                           0,
+                           0,
+                           0,
+                           0);
 
-      if (n < 1) {
-        continue;
-      }
+    if (n < 1) {
+      continue;
+    }
 
-      for (int i = 0; i < sockets_len; i++) {
-        if (IsListeningSocket(sockets[i])) {
-          AcceptConnection();
-        } else if (IsSocketBroken(sockets[i]) || IsSocketClosed(sockets[i])) {
-          DisconnectSocket(sockets[i]);
-        } else {
-          ReadSocketData(sockets[i]);
-        }
-      }
-
-      for (int i = 0; i < broken_sockets_len; i++) {
-        DisconnectSocket(broken_sockets[i]);
+    for (int i = 0; i < sockets_len; i++) {
+      if (IsListeningSocket(sockets[i])) {
+        AcceptConnection();
+      } else if (IsSocketBroken(sockets[i]) || IsSocketClosed(sockets[i])) {
+        DisconnectSocket(sockets[i]);
+      } else {
+        ReadSocketData(sockets[i]);
       }
     }
+
+    for (int i = 0; i < broken_sockets_len; i++) {
+      DisconnectSocket(broken_sockets[i]);
+    }
+  }
+}
+
+int Server::ListenAcceptCallback(void* opaque,
+                                 SRTSOCKET ns,
+                                 int hsversion,
+                                 const sockaddr* peeraddr,
+                                 const char* streamid) {
+  Server* server = static_cast<Server*>(opaque);
+  return server->OnNewConnection(ns, hsversion, peeraddr, streamid);
+}
+
+int Server::OnNewConnection(SRTSOCKET ns,
+                            int hsversion,
+                            const sockaddr* peeraddr,
+                            const char* streamid) {
+  char ip[INET6_ADDRSTRLEN];
+
+  std::string address;
+
+  if (peeraddr->sa_family == AF_INET) {
+    const sockaddr_in* ipv4 = reinterpret_cast<const sockaddr_in*>(peeraddr);
+
+    inet_ntop(AF_INET, &(ipv4->sin_addr), ip, INET_ADDRSTRLEN);
+
+    address = ip;
+  } else if (peeraddr->sa_family == AF_INET6) {
+    const sockaddr_in6* ipv6 = reinterpret_cast<const sockaddr_in6*>(peeraddr);
+
+    inet_ntop(AF_INET6, &(ipv6->sin6_addr), ip, INET6_ADDRSTRLEN);
+
+    address = ip;
+  }
+
+  std::unique_lock<std::mutex> lock(accept_mutex);
+
+  this->on_connect_request(address, streamid);
+
+  // NOTE: this check should be very fast as it blocks any receiving on the
+  // socket
+  auto result = accept_cv.wait_for(lock, std::chrono::milliseconds(500));
+
+  if (result == std::cv_status::timeout) {
+    srt_setrejectreason(ns, SRT_REJC_PREDEFINED + 504);
+
+    return -1;
+  } else if (!accept_awaiting_stream_id) {
+    srt_setrejectreason(ns, SRT_REJC_PREDEFINED + 403);
+
+    return -1;
+  }
+
+  return 0;
+}
+
+void Server::AnswerConnectRequest(int accept) {
+  {
+    std::lock_guard<std::mutex> lock(accept_mutex);
+
+    accept_awaiting_stream_id = accept;
+  }
+
+  accept_cv.notify_one();
 }
 
 bool Server::IsListeningSocket(Server::SrtSocket socket) const {
@@ -135,12 +207,16 @@ void Server::AcceptConnection() {
 
   int socket = srt_accept(srt_sock, (struct sockaddr*)&their_addr, &addr_len);
   if (socket == -1) {
-      throw new std::runtime_error("Failed to accept new socket");
+    throw new std::runtime_error("Failed to accept new socket");
   }
 
-  // auto streamid = srt_getsock(socket);
+  char raw_streamid[512] = {0};
+  int max_streamid_len = 512;
+  srt_getsockopt(socket, 0, SRTO_STREAMID, raw_streamid, &max_streamid_len);
 
-  this->on_socket_connected(socket);
+  auto streamid = std::string(raw_streamid, raw_streamid + max_streamid_len);
+
+  this->on_socket_connected(socket, streamid);
 
   const int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
   srt_epoll_add_usock(epoll, socket, &read_modes);

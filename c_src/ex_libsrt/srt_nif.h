@@ -1,7 +1,7 @@
 #pragma once
 
-#include "server/server.h"
 #include "client/client.h"
+#include "server/server.h"
 #include <memory>
 #include <unifex/unifex.h>
 

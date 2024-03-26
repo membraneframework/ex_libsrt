@@ -38,6 +38,14 @@ void Client::Run(const char* address, int port, const char* stream_id) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
   }
 
+  if (strlen(stream_id) > 0) {
+    if (srt_setsockflag(
+            srt_sock, SRTO_STREAMID, stream_id, strlen(stream_id)) ==
+        SRT_ERROR) {
+      throw std::runtime_error(std::string(srt_getlasterror_str()));
+    }
+  }
+
   epoll = srt_epoll_create();
   if (epoll == SRT_ERROR) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
@@ -61,7 +69,8 @@ void Client::Run(const char* address, int port, const char* stream_id) {
 void Client::Send(std::unique_ptr<char[]> data, int len) {
   if (running.load()) {
     auto lock = std::unique_lock(send_mutex);
-    send_cv.wait(lock, [&] { return (int)send_queue.size() < max_pending_messages; });
+    send_cv.wait(lock,
+                 [&] { return (int)send_queue.size() < max_pending_messages; });
 
     send_queue.emplace_back(std::move(data), len);
   } else {
@@ -105,52 +114,52 @@ void Client::Stop() {
 
 void Client::RunEpoll() {
   try {
-  while (running.load()) {
-    int read_error_len = 1;
-    int read_out_len = 1;
-    SrtSocket read_error;
-    SrtSocket read_out;
+    while (running.load()) {
+      int read_error_len = 1;
+      int read_out_len = 1;
+      SrtSocket read_error;
+      SrtSocket read_out;
 
-    int n = srt_epoll_wait(epoll,
-                           &read_error,
-                           &read_error_len,
-                           &read_out,
-                           &read_out_len,
-                           200,
-                           0,
-                           0,
-                           0,
-                           0);
-    if (n < 0) {
-      continue;
-    }
-
-    if (read_out_len > 0 && !connected) {
-      connected = true;
-
-      if (on_socket_connected) {
-        on_socket_connected();
+      int n = srt_epoll_wait(epoll,
+                             &read_error,
+                             &read_error_len,
+                             &read_out,
+                             &read_out_len,
+                             200,
+                             0,
+                             0,
+                             0,
+                             0);
+      if (n < 0) {
+        continue;
       }
+
+      if (read_out_len > 0 && !connected) {
+        connected = true;
+
+        if (on_socket_connected) {
+          on_socket_connected();
+        }
+      }
+
+      if (read_error_len > 0) {
+        int code = srt_getrejectreason(read_error);
+        auto reason = srt_rejectreason_str(code);
+
+        throw std::runtime_error(reason);
+      }
+
+      if (read_out_len > 0) {
+        auto lock = std::unique_lock(send_mutex);
+
+        send_cv.wait(
+            lock, [&] { return !this->send_queue.empty() || !running.load(); });
+
+        SendFromQueue();
+      }
+
+      send_cv.notify_all();
     }
-
-    if (read_error_len > 0) {
-      int code = srt_getrejectreason(read_error);
-      auto reason =  srt_rejectreason_str(code);
-
-      throw std::runtime_error(reason);
-    }
-
-    if (read_out_len > 0) {
-      auto lock = std::unique_lock(send_mutex);
-
-      send_cv.wait(
-          lock, [&] { return !this->send_queue.empty() || !running.load(); });
-
-      SendFromQueue();
-    }
-
-    send_cv.notify_all();
-  }
   } catch (const std::exception& e) {
     running.store(false);
 
