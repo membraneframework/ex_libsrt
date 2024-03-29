@@ -58,7 +58,7 @@ void Client::Run(const char* address, int port, const char* stream_id) {
   }
 
   int result = srt_connect(srt_sock, (struct sockaddr*)&sa, sizeof sa);
-  if (result == SRT_ERROR) {
+  if (result == SRT_ERROR)  {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
   }
 

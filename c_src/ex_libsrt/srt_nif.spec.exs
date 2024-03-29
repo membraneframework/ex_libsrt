@@ -31,4 +31,4 @@ sends {:srt_server_connect_request :: label, address :: string, stream_id :: str
 sends :srt_client_connected :: label
 sends {:srt_client_disconnected :: label, reason :: string}
 
-dirty :io,  start_server: 2, close_server_connectino: 2, stop_server: 1, start_client: 2
+dirty :io,  start_server: 2, close_server_connection: 2, stop_server: 1, start_client: 3

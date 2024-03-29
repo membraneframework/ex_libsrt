@@ -12,7 +12,7 @@ defmodule ExLibSRTBundlexProject do
       srt_nif: [
         sources: ["srt_nif.cpp", "server/server.cpp", "client/client.cpp"],
         deps: [unifex: :unifex],
-        pkg_configs: ["srt", "openssl"],
+        os_deps: [srt: :pkg_config, openssl: :pkg_config],
         libs: ["pthread"],
         interface: :nif,
         preprocessor: Unifex,

@@ -5,12 +5,17 @@ defmodule ExLibSRT.MixProject do
     [
       app: :ex_libsrt,
       version: "0.1.0",
-      elixir: "~> 1.14",
+      elixir: "~> 1.15",
+      elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       compilers: Mix.compilers() ++ [:unifex, :bundlex],
       deps: deps()
     ]
   end
+
+  defp elixirc_paths(_env), do: ["lib", "test/support"]
+  # defp elixirc_paths(:test), do: ["lib", "test/support"]
+  # defp elixirc_paths(_env), do: ["lib"]
 
   def application do
     [
@@ -20,7 +25,7 @@ defmodule ExLibSRT.MixProject do
 
   defp deps do
     [
-      {:unifex, "~> 1.0.1"}
+      {:unifex, "~> 1.2.0"}
     ]
   end
 end

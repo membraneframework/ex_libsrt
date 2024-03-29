@@ -63,6 +63,8 @@ void Server::Stop() {
 void Server::CloseConnection(int connection_id) {
   srt_epoll_remove_usock(epoll, connection_id);
   srt_close(connection_id);
+
+  this->on_socket_disconnected((SrtSocket)connection_id);
 }
 
 void Server::RunEpoll() {
@@ -102,7 +104,17 @@ void Server::RunEpoll() {
     }
 
     for (int i = 0; i < broken_sockets_len; i++) {
-      DisconnectSocket(broken_sockets[i]);
+      bool disconnect = true;
+      for (int j = 0; j < sockets_len; j++) {
+        if (broken_sockets[i] == sockets[j]) {
+          disconnect = false;
+          break;
+        }
+      }
+
+      if (disconnect) {
+        DisconnectSocket(broken_sockets[i]);
+      }
     }
   }
 }
@@ -117,7 +129,7 @@ int Server::ListenAcceptCallback(void* opaque,
 }
 
 int Server::OnNewConnection(SRTSOCKET ns,
-                            int hsversion,
+                            int /* hsversion */,
                             const sockaddr* peeraddr,
                             const char* streamid) {
   char ip[INET6_ADDRSTRLEN];
