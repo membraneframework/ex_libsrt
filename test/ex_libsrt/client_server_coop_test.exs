@@ -1,19 +1,21 @@
 defmodule ExLibSRT.ClientServerCoopTest do
   use ExUnit.Case, async: true
 
+  alias ExLibSRT.{Client, Server}
+
   setup :prepare_streaming
 
   test "connect client to the server", ctx do
     parent = self()
 
     Task.start(fn ->
-      assert {:ok, server} = ExLibSRT.start_server("127.0.0.1", ctx.srt_port)
+      assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port)
 
       send(parent, :running)
 
       assert_receive {:srt_server_connect_request, _address, "some_stream_id"}
 
-      ExLibSRT.accept_awaiting_connect_request(server)
+      Server.accept_awaiting_connect_request(server)
 
       assert_receive {:srt_server_conn, conn_id, _stream_id}
 
@@ -24,11 +26,11 @@ defmodule ExLibSRT.ClientServerCoopTest do
 
     assert_receive :running, 500
 
-    assert {:ok, client} = ExLibSRT.start_client("127.0.0.1", ctx.srt_port, "some_stream_id")
+    assert {:ok, client} = Client.start("127.0.0.1", ctx.srt_port, "some_stream_id")
 
     assert_receive :srt_client_connected
 
-    :ok = ExLibSRT.stop_client(client)
+    :ok = Client.stop(client)
 
     assert_receive :stopped
   end
@@ -37,13 +39,13 @@ defmodule ExLibSRT.ClientServerCoopTest do
     parent = self()
 
     Task.start(fn ->
-      assert {:ok, server} = ExLibSRT.start_server("127.0.0.1", ctx.srt_port)
+      assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port)
 
       send(parent, :running)
 
       assert_receive {:srt_server_connect_request, _address, "some_stream_id"}
 
-      ExLibSRT.reject_awaiting_connect_request(server)
+      Server.reject_awaiting_connect_request(server)
 
       send(parent, :stopped)
     end)
@@ -51,7 +53,7 @@ defmodule ExLibSRT.ClientServerCoopTest do
     assert_receive :running, 500
 
     assert {:error, "Stream rejected by server", 403} =
-             ExLibSRT.start_client("127.0.0.1", ctx.srt_port, "some_stream_id")
+             Client.start("127.0.0.1", ctx.srt_port, "some_stream_id")
 
     assert_receive :stopped
   end
@@ -60,7 +62,7 @@ defmodule ExLibSRT.ClientServerCoopTest do
     parent = self()
 
     Task.start(fn ->
-      assert {:ok, _server} = ExLibSRT.start_server("127.0.0.1", ctx.srt_port)
+      assert {:ok, _server} = Server.start("127.0.0.1", ctx.srt_port)
 
       send(parent, :running)
 
@@ -72,7 +74,7 @@ defmodule ExLibSRT.ClientServerCoopTest do
     assert_receive :running, 500
 
     assert {:error, "Stream rejected by server", 504} =
-             ExLibSRT.start_client("127.0.0.1", ctx.srt_port, "some_stream_id")
+             Client.start("127.0.0.1", ctx.srt_port, "some_stream_id")
 
     assert_receive :stopped, 1_000
   end

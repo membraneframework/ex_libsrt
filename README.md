@@ -14,3 +14,10 @@ def deps do
   ]
 end
 
+## Client example
+```elixir
+{:ok, client} = ExLibSRT.Client.start_link()
+````
+
+```
+
