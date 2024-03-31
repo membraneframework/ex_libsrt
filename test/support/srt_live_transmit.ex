@@ -5,7 +5,9 @@ defmodule ExLibSRT.SRTLiveTransmit do
   """
 
   @opaque streaming_proxy :: port()
+  @opaque receiving_proxy :: port()
   @opaque stream :: :gen_udp.socket()
+  @opaque stream_receiver :: :gen_udp.socket()
 
   @spec start_streaming_proxy(non_neg_integer(), non_neg_integer(), binary()) :: streaming_proxy()
   def start_streaming_proxy(udp_port, srt_port, stream_id \\ "") do
@@ -28,7 +30,35 @@ defmodule ExLibSRT.SRTLiveTransmit do
     port
   end
 
-  @spec stop_proxy(streaming_proxy()) :: :ok
+  @spec start_receiving_proxy(non_neg_integer(), non_neg_integer(), binary()) :: streaming_proxy()
+  def start_receiving_proxy(srt_port, udp_port, stream_id \\ "") do
+    auth =
+      if stream_id != "" do
+        "?streamid=#{stream_id}"
+      else
+        ""
+      end
+
+    args = [
+      :binary,
+      {:args,
+       [
+         "-q",
+         "-loglevel:fatal",
+         "-autoreconnect:no",
+         "srt://:#{srt_port}" <> auth,
+         "udp://127.0.0.1:#{udp_port}"
+       ]}
+    ]
+
+    port = Port.open({:spawn_executable, System.find_executable("srt-live-transmit")}, args)
+
+    wait_for_port(udp_port)
+
+    port
+  end
+
+  @spec stop_proxy(streaming_proxy() | receiving_proxy()) :: :ok
   def stop_proxy(proxy) do
     {:os_pid, os_pid} = :erlang.port_info(proxy, :os_pid)
     {_reuslt, 0} = System.cmd("kill", ["-15", "#{os_pid}"])
@@ -50,6 +80,23 @@ defmodule ExLibSRT.SRTLiveTransmit do
     :gen_udp.send(socket, payload)
 
     :ok
+  end
+
+  @spec start_stream_receiver(non_neg_integer()) :: stream()
+  def start_stream_receiver(udp_port) do
+    {:ok, socket} = :gen_udp.open(udp_port, [:binary])
+
+    socket
+  end
+
+  @spec receive_payload(stream_receiver(), non_neg_integer()) :: {:ok, binary()} | {:error, any()}
+  def receive_payload(socket, timeout \\ 5_000) do
+    receive do
+      {:udp, ^socket, _address, _port, data} ->
+        {:ok, data}
+    after
+      timeout -> {:error, :timeout}
+    end
   end
 
   @chunk_size 1_000

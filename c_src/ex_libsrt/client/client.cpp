@@ -2,6 +2,7 @@
 
 #include <exception>
 #include <utility>
+#include <chrono>
 
 Client::~Client() {
   if (epoll != -1) {
@@ -59,7 +60,9 @@ void Client::Run(const char* address, int port, const char* stream_id) {
 
   int result = srt_connect(srt_sock, (struct sockaddr*)&sa, sizeof sa);
   if (result == SRT_ERROR)  {
-    throw std::runtime_error(std::string(srt_getlasterror_str()));
+    auto code = srt_getrejectreason(srt_sock);
+
+    throw StreamRejectedException(code);
   }
 
   running.store(true);
@@ -70,7 +73,7 @@ void Client::Send(std::unique_ptr<char[]> data, int len) {
   if (running.load()) {
     auto lock = std::unique_lock(send_mutex);
     send_cv.wait(lock,
-                 [&] { return (int)send_queue.size() < max_pending_messages; });
+                 [&] { return (int)send_queue.size() < max_pending_messages || running.load(); });
 
     send_queue.emplace_back(std::move(data), len);
   } else {
@@ -85,9 +88,9 @@ void Client::Stop() {
     while (true) {
       auto lock = std::unique_lock(send_mutex);
 
-      send_cv.wait(lock, [&] { return send_queue.empty(); });
+      send_cv.wait(lock, [&] { return send_queue.empty() || running.load(); });
 
-      if (send_queue.empty()) {
+      if (send_queue.empty() || running.load()) {
         break;
       }
     }
@@ -142,18 +145,44 @@ void Client::RunEpoll() {
         }
       }
 
-      if (read_error_len > 0) {
+      if (read_error_len > 0 && !connected) {
         int code = srt_getrejectreason(read_error);
+        printf("Rejection code %d\n", code);
         auto reason = srt_rejectreason_str(code);
 
         throw std::runtime_error(reason);
       }
 
+      if (read_error_len > 0) {
+        int posix_err;
+        auto code = srt_getlasterror(&posix_err);
+
+        if (code == 0) {
+          running.store(false);
+          send_cv.notify_all();
+
+          on_socket_disconnected();
+
+          return;
+        } else {
+          auto reason = srt_getlasterror_str();
+
+          throw std::runtime_error(reason);
+        }
+      }
+
       if (read_out_len > 0) {
         auto lock = std::unique_lock(send_mutex);
 
-        send_cv.wait(
-            lock, [&] { return !this->send_queue.empty() || !running.load(); });
+        auto sendable = send_cv.wait_for(
+            lock,
+            std::chrono::milliseconds(500),
+            [&] { return !this->send_queue.empty() || !running.load(); });
+
+        // we are waiting with timeout to make sure that we catch a socket disconnect event even when blocking
+        if (!sendable) {
+          continue;
+        }
 
         SendFromQueue();
       }
@@ -162,6 +191,7 @@ void Client::RunEpoll() {
     }
   } catch (const std::exception& e) {
     running.store(false);
+    send_cv.notify_all();
 
     if (on_socket_error) {
       on_socket_error(e.what());

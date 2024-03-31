@@ -13,9 +13,8 @@ defmodule ExLibSRT.MixProject do
     ]
   end
 
-  defp elixirc_paths(_env), do: ["lib", "test/support"]
-  # defp elixirc_paths(:test), do: ["lib", "test/support"]
-  # defp elixirc_paths(_env), do: ["lib"]
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_env), do: ["lib"]
 
   def application do
     [
@@ -25,7 +24,10 @@ defmodule ExLibSRT.MixProject do
 
   defp deps do
     [
-      {:unifex, "~> 1.2.0"}
+      {:unifex, "~> 1.2.0"},
+      {:credo, "~> 1.4", only: :dev, runtime: false},
+      {:dialyxir, "~> 1.1", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.31", only: :dev, runtime: false}
     ]
   end
 end

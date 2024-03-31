@@ -3,10 +3,6 @@ defmodule ExLibSRT.ServerTest do
 
   alias ExLibSRT.SRTLiveTransmit, as: Transmit
 
-  @moduletag :tmp_dir
-
-  setup :prepare_file
-
   setup :prepare_streaming
 
   test "accept a new connection", ctx do
@@ -140,18 +136,6 @@ defmodule ExLibSRT.ServerTest do
     ExLibSRT.close_server_connection(conn_id, server)
 
     assert_receive {:srt_server_conn_closed, ^conn_id}, 1_000
-  end
-
-  defp prepare_file(ctx) do
-    path = Path.join(ctx.tmp_dir, "#{System.unique_integer([:positive])}")
-
-    file_size = Map.get(ctx, :file_size, 1024)
-
-    content = :crypto.strong_rand_bytes(file_size)
-
-    File.write!(path, content)
-
-    [file_size: file_size, file_path: path, file_content: content]
   end
 
   defp prepare_streaming(_ctx) do

@@ -109,6 +109,10 @@ UNIFEX_TERM start_server(UnifexEnv* env, char* address, int port) {
 
 UNIFEX_TERM accept_awaiting_connect_request(UnifexEnv* env,
                                             UnifexState* state) {
+  if (state->server == nullptr) {
+    return accept_awaiting_connect_request_result_error(env, "Server is not active");
+  }
+
   state->server->AnswerConnectRequest(true);
 
   return accept_awaiting_connect_request_result_ok(env);
@@ -116,6 +120,10 @@ UNIFEX_TERM accept_awaiting_connect_request(UnifexEnv* env,
 
 UNIFEX_TERM reject_awaiting_connect_request(UnifexEnv* env,
                                             UnifexState* state) {
+  if (state->server == nullptr) {
+    return accept_awaiting_connect_request_result_error(env, "Server is not active");
+  }
+
   state->server->AnswerConnectRequest(false);
 
   return accept_awaiting_connect_request_result_ok(env);
@@ -132,6 +140,10 @@ UNIFEX_TERM stop_server(UnifexEnv* env, UnifexState* state) {
 
 UNIFEX_TERM
 close_server_connection(UnifexEnv* env, int conn_id, UnifexState* state) {
+  if (state->server == nullptr) {
+    return accept_awaiting_connect_request_result_error(env, "Server is not active");
+  }
+
   if (state->server) {
     state->server->CloseConnection(conn_id);
   }
@@ -155,8 +167,11 @@ start_client(UnifexEnv* env, char* server_address, int port, char* stream_id) {
     state->client->SetOnSocketConnected(
         [=]() { send_srt_client_connected(state->env, state->owner, 1); });
 
+    state->client->SetOnSocketDisconnected(
+        [=]() { send_srt_client_disconnected(state->env, state->owner, 1); });
+
     state->client->SetOnSocketError([=](const std::string& reason) {
-      send_srt_client_disconnected(state->env, state->owner, 1, reason.c_str());
+      send_srt_client_error(state->env, state->owner, 1, reason.c_str());
     });
 
     state->client->Run(server_address, port, stream_id);
@@ -165,15 +180,25 @@ start_client(UnifexEnv* env, char* server_address, int port, char* stream_id) {
     unifex_release_state(env, state);
 
     return result;
+  } catch (const Client::StreamRejectedException& e) {
+    auto code = e.GetCode();
+
+    unifex_release_state(env, state);
+
+    return start_client_result_error(env, e.what(), code);
   } catch (const std::exception& e) {
     unifex_release_state(env, state);
 
-    return start_client_result_error(env, e.what());
+    return start_client_result_error(env, e.what(), -1);
   }
 }
 
 UNIFEX_TERM
 send_client_data(UnifexEnv* env, UnifexPayload* payload, UnifexState* state) {
+  if (state->client == nullptr) {
+    return send_client_data_result_error(env, "Client is not active");
+  } 
+
   try {
     auto buffer = std::unique_ptr<char[]>(new char[payload->size]);
 
@@ -188,10 +213,12 @@ send_client_data(UnifexEnv* env, UnifexPayload* payload, UnifexState* state) {
 }
 
 UNIFEX_TERM stop_client(UnifexEnv* env, UnifexState* state) {
-  if (state->client) {
-    state->client->Stop();
-    state->client = nullptr;
+  if (state->client == nullptr) {
+    return stop_client_result_error(env, "Client is not active");
   }
+
+  state->client->Stop();
+  state->client = nullptr;
 
   return stop_client_result_ok(env);
 }
