@@ -50,6 +50,14 @@ void Server::Run(const char* address, int port) {
   epoll_loop = std::thread(&Server::RunEpoll, this);
 }
 
+std::unique_ptr<SrtSocketStats> Server::ReadSocketStats(int socket, bool clear_intervals) {
+  if (active_sockets.find(socket) != std::end(active_sockets)) {
+    return readSrtSocketStats(socket, clear_intervals);
+  }
+
+  return nullptr;
+}
+
 void Server::Stop() {
   if (running.load()) {
     running.store(false);
@@ -64,6 +72,7 @@ void Server::CloseConnection(int connection_id) {
   srt_epoll_remove_usock(epoll, connection_id);
   srt_close(connection_id);
 
+  active_sockets.erase(connection_id);
   this->on_socket_disconnected((SrtSocket)connection_id);
 }
 
@@ -198,6 +207,7 @@ void Server::DisconnectSocket(Server::SrtSocket socket) {
 
   srt_close(socket);
 
+  active_sockets.erase(socket);
   this->on_socket_disconnected(socket);
 }
 
@@ -229,6 +239,7 @@ void Server::AcceptConnection() {
   auto streamid = std::string(raw_streamid, raw_streamid + max_streamid_len);
 
   this->on_socket_connected(socket, streamid);
+  active_sockets.insert(socket);
 
   const int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
   srt_epoll_add_usock(epoll, socket, &read_modes);

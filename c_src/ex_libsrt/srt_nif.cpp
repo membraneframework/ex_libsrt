@@ -50,6 +50,65 @@ void handle_destroy_state(UnifexEnv* env, UnifexState* state) {
   state->~State();
 }
 
+srt_socket_stats map_socket_stats(SrtSocketStats* stats) {
+  srt_socket_stats srt_stats;
+
+  srt_stats.msTimeStamp = stats->msTimeStamp;
+  srt_stats.pktSentTotal = stats->pktSentTotal;
+  srt_stats.pktRecvTotal = stats->pktRecvTotal;
+  srt_stats.pktSentUniqueTotal = stats->pktSentUniqueTotal;
+  srt_stats.pktRecvUniqueTotal = stats->pktRecvUniqueTotal;
+  srt_stats.pktSndLossTotal = stats->pktSndLossTotal;
+  srt_stats.pktRcvLossTotal = stats->pktRcvLossTotal;
+  srt_stats.pktRetransTotal = stats->pktRetransTotal;
+  srt_stats.pktSentACKTotal = stats->pktSentACKTotal;
+  srt_stats.pktRecvACKTotal = stats->pktRecvACKTotal;
+  srt_stats.pktSentNAKTotal = stats->pktSentNAKTotal;
+  srt_stats.pktRecvNAKTotal = stats->pktRecvNAKTotal;
+  srt_stats.usSndDurationTotal = stats->usSndDurationTotal;
+  srt_stats.pktSndDropTotal = stats->pktSndDropTotal;
+  srt_stats.pktRcvDropTotal = stats->pktRcvDropTotal;
+  srt_stats.pktRcvUndecryptTotal = stats->pktRcvUndecryptTotal;
+  srt_stats.pktSndFilterExtraTotal = stats->pktSndFilterExtraTotal;
+  srt_stats.pktRcvFilterExtraTotal = stats->pktRcvFilterExtraTotal;
+  srt_stats.pktRcvFilterSupplyTotal = stats->pktRcvFilterSupplyTotal;
+  srt_stats.pktRcvFilterLossTotal = stats->pktRcvFilterLossTotal;
+  srt_stats.byteSentTotal = stats->byteSentTotal;
+  srt_stats.byteRecvTotal = stats->byteRecvTotal;
+  srt_stats.byteSentUniqueTotal = stats->byteSentUniqueTotal;
+  srt_stats.byteRecvUniqueTotal = stats->byteRecvUniqueTotal;
+  srt_stats.byteRcvLossTotal = stats->byteRcvLossTotal;
+  srt_stats.byteRetransTotal = stats->byteRetransTotal;
+  srt_stats.byteSndDropTotal = stats->byteSndDropTotal;
+  srt_stats.byteRcvDropTotal = stats->byteRcvDropTotal;
+  srt_stats.byteRcvUndecryptTotal = stats->byteRcvUndecryptTotal;
+  srt_stats.pktSent = stats->pktSent;
+  srt_stats.pktRecv = stats->pktRecv;
+  srt_stats.pktSentUnique = stats->pktSentUnique;
+  srt_stats.pktRecvUnique = stats->pktRecvUnique;
+  srt_stats.pktSndLoss = stats->pktSndLoss;
+  srt_stats.pktRcvLoss = stats->pktRcvLoss;
+  srt_stats.pktRetrans = stats->pktRetrans;
+  srt_stats.pktRcvRetrans = stats->pktRcvRetrans;
+  srt_stats.pktSentACK = stats->pktSentACK;
+  srt_stats.pktRecvACK = stats->pktRecvACK;
+  srt_stats.pktSentNAK = stats->pktSentNAK;
+  srt_stats.pktRecvNAK = stats->pktRecvNAK;
+  srt_stats.pktSndFilterExtra = stats->pktSndFilterExtra;
+  srt_stats.pktRcvFilterExtra = stats->pktRcvFilterExtra;
+  srt_stats.pktRcvFilterSupply = stats->pktRcvFilterSupply;
+  srt_stats.pktRcvFilterLoss = stats->pktRcvFilterLoss;
+  srt_stats.mbpsSendRate = stats->mbpsSendRate;
+  srt_stats.mbpsRecvRate = stats->mbpsRecvRate;
+  srt_stats.usSndDuration = stats->usSndDuration;
+  srt_stats.pktReorderDistance = stats->pktReorderDistance;
+  srt_stats.pktRcvBelated = stats->pktRcvBelated;
+  srt_stats.pktSndDrop = stats->pktSndDrop;
+  srt_stats.pktRcvDrop = stats->pktRcvDrop;
+
+  return srt_stats;
+}
+
 UNIFEX_TERM start_server(UnifexEnv* env, char* address, int port) {
   State* state = unifex_alloc_state(env);
   state = new (state) State();
@@ -118,6 +177,21 @@ UNIFEX_TERM accept_awaiting_connect_request(UnifexEnv* env,
   return accept_awaiting_connect_request_result_ok(env);
 }
 
+UNIFEX_TERM read_server_socket_stats(UnifexEnv* env, int conn_id, UnifexState* state) {
+  if (state->server == nullptr) {
+    return read_server_socket_stats_result_error(env, "Server is not active");
+  }
+
+  auto stats = state->server->ReadSocketStats(conn_id, true);
+  if (!stats) {
+    return read_server_socket_stats_result_error(env, "Socket not found");
+  }
+
+  auto srt_stats = map_socket_stats(stats.get());
+
+  return read_server_socket_stats_result_ok(env, srt_stats);
+}
+
 UNIFEX_TERM reject_awaiting_connect_request(UnifexEnv* env,
                                             UnifexState* state) {
   if (state->server == nullptr) {
@@ -128,6 +202,7 @@ UNIFEX_TERM reject_awaiting_connect_request(UnifexEnv* env,
 
   return accept_awaiting_connect_request_result_ok(env);
 }
+
 
 UNIFEX_TERM stop_server(UnifexEnv* env, UnifexState* state) {
   if (state->server) {
@@ -193,6 +268,7 @@ start_client(UnifexEnv* env, char* server_address, int port, char* stream_id) {
   }
 }
 
+
 UNIFEX_TERM
 send_client_data(UnifexEnv* env, UnifexPayload* payload, UnifexState* state) {
   if (state->client == nullptr) {
@@ -210,6 +286,21 @@ send_client_data(UnifexEnv* env, UnifexPayload* payload, UnifexState* state) {
   } catch (const std::exception& e) {
     return send_client_data_result_error(env, e.what());
   }
+}
+
+UNIFEX_TERM read_client_socket_stats(UnifexEnv* env, UnifexState* state) {
+  if (state->client == nullptr) {
+    return read_client_socket_stats_result_error(env, "Client is not active");
+  }
+
+  auto stats = state->client->ReadSocketStats(true);
+  if (!stats) {
+    return read_client_socket_stats_result_error(env, "Failed to read client socket stats");
+  }
+
+  auto srt_stats = map_socket_stats(stats.get());
+
+  return read_client_socket_stats_result_ok(env, srt_stats);
 }
 
 UNIFEX_TERM stop_client(UnifexEnv* env, UnifexState* state) {

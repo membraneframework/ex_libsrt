@@ -21,7 +21,7 @@ defmodule ExLibSRT.ServerTest do
     assert_receive {:srt_server_connect_request, address, ^stream_id}, 2_000
     assert address == "127.0.0.1"
 
-    Server.accept_awaiting_connect_request(server)
+    :ok = Server.accept_awaiting_connect_request(server)
 
     assert_receive {:srt_server_conn, _conn_id, ^stream_id}, 1_000
 
@@ -53,7 +53,7 @@ defmodule ExLibSRT.ServerTest do
     assert_receive {:srt_server_connect_request, address, _stream_id}, 2_000
     assert address == "127.0.0.1"
 
-    Server.accept_awaiting_connect_request(server)
+    :ok = Server.accept_awaiting_connect_request(server)
 
     assert_receive {:srt_server_conn, conn_id, _stream_id}, 1_000
 
@@ -80,7 +80,7 @@ defmodule ExLibSRT.ServerTest do
 
         assert_receive {:srt_server_connect_request, _address, _stream_id}, 2_000
 
-        Server.accept_awaiting_connect_request(server)
+        :ok = Server.accept_awaiting_connect_request(server)
 
         assert_receive {:srt_server_conn, conn_id, _stream_id}, 1_000
 
@@ -111,7 +111,7 @@ defmodule ExLibSRT.ServerTest do
       )
 
     assert_receive {:srt_server_connect_request, _address, _stream_id}, 2_000
-    Server.accept_awaiting_connect_request(server)
+    :ok = Server.accept_awaiting_connect_request(server)
 
     assert_receive {:srt_server_conn, conn_id, _stream_id}, 1_000
 
@@ -130,13 +130,46 @@ defmodule ExLibSRT.ServerTest do
       )
 
     assert_receive {:srt_server_connect_request, _address, _stream_id}, 2_000
-    Server.accept_awaiting_connect_request(server)
+    :ok = Server.accept_awaiting_connect_request(server)
 
     assert_receive {:srt_server_conn, conn_id, _stream_id}, 1_000
 
     Server.close_server_connection(conn_id, server)
 
     assert_receive {:srt_server_conn_closed, ^conn_id}, 1_000
+  end
+
+  test "read socket stats", ctx do
+    assert {:ok, server} = Server.start("0.0.0.0", ctx.srt_port)
+
+    _proxy =
+      Transmit.start_streaming_proxy(
+        ctx.udp_port,
+        ctx.srt_port
+      )
+
+    assert_receive {:srt_server_connect_request, _address, _stream_id}, 2_000
+    :ok = Server.accept_awaiting_connect_request(server)
+
+    assert_receive {:srt_server_conn, conn_id, _stream_id}, 1_000
+
+    stream = Transmit.start_stream(ctx.udp_port)
+
+    payload = :crypto.strong_rand_bytes(100)
+
+    for _i <- 1..10 do
+      :ok = Transmit.send_payload(stream, payload)
+
+      assert_receive {:srt_data, ^conn_id, ^payload}, 500
+    end
+
+    assert {:ok, stats} = Server.read_socket_stats(conn_id, server)
+
+    assert %ExLibSRT.SocketStats{} = stats
+    assert stats.pktRecv == 10
+    assert stats.byteRecvTotal > 1_000
+
+    assert {:error, "Socket not found"} = Server.read_socket_stats(2137, server)
   end
 
   defp prepare_streaming(_ctx) do

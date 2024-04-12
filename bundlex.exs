@@ -10,7 +10,7 @@ defmodule ExLibSRTBundlexProject do
   defp natives() do
     [
       srt_nif: [
-        sources: ["srt_nif.cpp", "server/server.cpp", "client/client.cpp"],
+        sources: ["srt_nif.cpp", "server/server.cpp", "client/client.cpp", "common/srt_socket_stats.cpp"],
         deps: [unifex: :unifex],
         os_deps: [srt: :pkg_config, openssl: :pkg_config],
         libs: ["pthread"],

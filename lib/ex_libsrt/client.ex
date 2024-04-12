@@ -45,4 +45,12 @@ defmodule ExLibSRT.Client do
   def send_data(payload, client) do
     ExLibSRT.Native.send_client_data(payload, client)
   end
+
+  @doc """
+  Reads socket statistics.
+  """
+  @spec read_socket_stats(t()) ::
+          {:ok, ExLibSRT.SocketStats.t()} | {:error, reason :: String.t()}
+  def read_socket_stats(client),
+    do: ExLibSRT.Native.read_client_socket_stats(client)
 end

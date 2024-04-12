@@ -4,6 +4,7 @@
 #include <mutex>
 #include <srt/srt.h>
 #include <thread>
+#include "../common/srt_socket_stats.h"
 
 class Client {
 public:
@@ -31,6 +32,7 @@ public:
 
   void Run(const char* address, int port, const char* stream_id);
   void Send(std::unique_ptr<char[]> data, int len);
+  std::unique_ptr<SrtSocketStats> ReadSocketStats(bool clear_intervals);
   void Stop();
 
   void

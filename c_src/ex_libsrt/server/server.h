@@ -9,6 +9,8 @@
 #include <srt/srt.h>
 #include <string>
 #include <thread>
+#include <set>
+#include "../common/srt_socket_stats.h"
 
 extern "C" {
 #include <arpa/inet.h>
@@ -31,6 +33,8 @@ public:
   void CloseConnection(int connection_id);
 
   void AnswerConnectRequest(int accept);
+
+  std::unique_ptr<SrtSocketStats> ReadSocketStats(int socket, bool clear_intervals);
 
   void SetOnSocketConnected(
       std::function<void(SrtSocket, const std::string&)> on_socket_connected) {
@@ -90,6 +94,7 @@ private:
   std::thread epoll_loop;
 
 private:
+  std::set<SrtSocket> active_sockets;
   std::function<void(SrtSocket, const std::string&)> on_socket_connected;
   std::function<void(SrtSocket)> on_socket_disconnected;
   std::function<void(SrtSocket, const char*, int)> on_socket_data;

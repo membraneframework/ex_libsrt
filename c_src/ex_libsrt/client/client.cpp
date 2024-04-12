@@ -83,6 +83,10 @@ void Client::Send(std::unique_ptr<char[]> data, int len) {
   send_cv.notify_all();
 }
 
+std::unique_ptr<SrtSocketStats> Client::ReadSocketStats(bool clear_intervals) {
+  return readSrtSocketStats(srt_sock, clear_intervals);
+}
+
 void Client::Stop() {
   if (running.load()) {
     while (true) {

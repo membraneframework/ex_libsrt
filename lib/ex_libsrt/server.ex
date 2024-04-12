@@ -89,4 +89,12 @@ defmodule ExLibSRT.Server do
   @spec close_server_connection(connection_id(), t()) :: :ok | {:error, reason :: String.t()}
   def close_server_connection(connection_id, server),
     do: ExLibSRT.Native.close_server_connection(connection_id, server)
+
+  @doc """
+  Reads socket statistics.
+  """
+  @spec read_socket_stats(connection_id(), t()) ::
+          {:ok, ExLibSRT.SocketStats.t()} | {:error, reason :: String.t()}
+  def read_socket_stats(connection_id, server),
+    do: ExLibSRT.Native.read_server_socket_stats(connection_id, server)
 end
