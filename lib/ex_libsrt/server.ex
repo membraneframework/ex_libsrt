@@ -74,7 +74,26 @@ defmodule ExLibSRT.Server do
   """
   @spec accept_awaiting_connect_request(t()) :: :ok | {:error, reason :: String.t()}
   def accept_awaiting_connect_request(server),
-    do: ExLibSRT.Native.accept_awaiting_connect_request(server)
+    do: ExLibSRT.Native.accept_awaiting_connect_request(self(), server)
+
+  @doc """
+  Acccepts the currently awaiting connection request and starts a separate connection process
+  """
+  @spec accept_awaiting_connect_request_with_handler(ExLibSRT.Connection.Handler.t(), t()) ::
+          {:ok, ExLibSRT.Connection.t()} | {:error, reason :: any()}
+  def accept_awaiting_connect_request_with_handler(handler, server) do
+    with {:ok, handler} <- ExLibSRT.Connection.start(handler) do
+      case ExLibSRT.Native.accept_awaiting_connect_request(handler, server) do
+        :ok ->
+          {:ok, handler}
+
+        {:error, _reason} = error ->
+          ExLibSRT.Connection.stop(handler)
+
+          error
+      end
+    end
+  end
 
   @doc """
   Rejects the currently awaiting connection request.

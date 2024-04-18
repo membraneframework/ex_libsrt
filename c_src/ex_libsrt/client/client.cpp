@@ -151,7 +151,6 @@ void Client::RunEpoll() {
 
       if (read_error_len > 0 && !connected) {
         int code = srt_getrejectreason(read_error);
-        printf("Rejection code %d\n", code);
         auto reason = srt_rejectreason_str(code);
 
         throw std::runtime_error(reason);

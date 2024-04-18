@@ -123,12 +123,23 @@ UNIFEX_TERM start_server(UnifexEnv* env, char* address, int port) {
 
     state->server->SetOnSocketConnected(
         [=](Server::SrtSocket socket, const std::string& stream_id) {
-          send_srt_server_conn(
-              state->env, state->owner, 1, socket, stream_id.c_str());
+          std::lock_guard lock(state->conn_receivers_mutex);
+
+          if (auto it = state->conn_receivers.find(socket); it != std::end(state->conn_receivers)) {
+            send_srt_server_conn(
+                state->env, it->second, 1, socket, stream_id.c_str());
+          }
+
         });
 
     state->server->SetOnSocketDisconnected([=](Server::SrtSocket socket) {
-      send_srt_server_conn_closed(state->env, state->owner, 1, socket);
+      std::lock_guard lock(state->conn_receivers_mutex);
+
+      if (auto it = state->conn_receivers.find(socket); it != std::end(state->conn_receivers)) {
+        send_srt_server_conn_closed(state->env, it->second, 1, socket);
+      }
+
+      state->conn_receivers.erase(socket);
     });
 
     state->server->SetOnSocketData(
@@ -140,7 +151,13 @@ UNIFEX_TERM start_server(UnifexEnv* env, char* address, int port) {
 
           memcpy(payload->data, data, len);
 
-          send_srt_data(state->env, state->owner, 1, socket, payload);
+          {
+            std::unique_lock lock(state->conn_receivers_mutex);
+            if (auto it = state->conn_receivers.find(socket); it != std::end(state->conn_receivers)) {
+              // TODO: make sure that the message has been properly sent
+              send_srt_data(state->env, it->second, 1, socket, payload);
+            }
+          }
 
           unifex_payload_release(payload);
 
@@ -166,13 +183,17 @@ UNIFEX_TERM start_server(UnifexEnv* env, char* address, int port) {
   }
 }
 
-UNIFEX_TERM accept_awaiting_connect_request(UnifexEnv* env,
-                                            UnifexState* state) {
+UNIFEX_TERM accept_awaiting_connect_request(UnifexEnv *env, UnifexPid receiver,
+                                            UnifexState *state) {
   if (state->server == nullptr) {
     return accept_awaiting_connect_request_result_error(env, "Server is not active");
   }
 
+  auto id = state->server->GetAwaitingConnectionRequestId();
   state->server->AnswerConnectRequest(true);
+
+  std::lock_guard lock(state->conn_receivers_mutex);
+  state->conn_receivers.insert({id, receiver});
 
   return accept_awaiting_connect_request_result_ok(env);
 }

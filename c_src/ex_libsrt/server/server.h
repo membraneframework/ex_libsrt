@@ -34,6 +34,8 @@ public:
 
   void AnswerConnectRequest(int accept);
 
+  SrtSocket GetAwaitingConnectionRequestId() const { return awaiting_connect_request_socket; }
+
   std::unique_ptr<SrtSocketStats> ReadSocketStats(int socket, bool clear_intervals);
 
   void SetOnSocketConnected(
@@ -105,4 +107,5 @@ private:
   std::mutex accept_mutex;
   std::condition_variable accept_cv;
   bool accept_awaiting_stream_id = false;
+  SrtSocket awaiting_connect_request_socket = -1;
 };

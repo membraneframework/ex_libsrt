@@ -161,11 +161,12 @@ int Server::OnNewConnection(SRTSOCKET ns,
 
   std::unique_lock<std::mutex> lock(accept_mutex);
 
+  awaiting_connect_request_socket = ns;
+
   this->on_connect_request(address, streamid);
 
-  // NOTE: this check should be very fast as it blocks any receiving on the
-  // socket
-  auto result = accept_cv.wait_for(lock, std::chrono::milliseconds(500));
+  // NOTE: this check should be very fast as it blocks any receiving on the socket
+  auto result = accept_cv.wait_for(lock, std::chrono::milliseconds(1000));
 
   if (result == std::cv_status::timeout) {
     srt_setrejectreason(ns, SRT_REJC_PREDEFINED + 504);
@@ -185,6 +186,7 @@ void Server::AnswerConnectRequest(int accept) {
     std::lock_guard<std::mutex> lock(accept_mutex);
 
     accept_awaiting_stream_id = accept;
+    awaiting_connect_request_socket = -1;
   }
 
   accept_cv.notify_one();

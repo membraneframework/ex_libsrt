@@ -65,7 +65,7 @@ callback :unload, :on_unload
 
 spec start_server(host :: string, port :: int) :: {:ok :: label, state} | {:error :: label, reason :: string}
 
-spec accept_awaiting_connect_request(state) :: (:ok :: label) | {:error :: label, reason :: string}
+spec accept_awaiting_connect_request(receiver :: pid, state) :: (:ok :: label) | {:error :: label, reason :: string}
 
 spec reject_awaiting_connect_request(state) :: (:ok :: label) | {:error :: label, reason :: string}
 

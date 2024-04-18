@@ -172,6 +172,73 @@ defmodule ExLibSRT.ServerTest do
     assert {:error, "Socket not found"} = Server.read_socket_stats(2137, server)
   end
 
+  test "starts a separate connection process", ctx do
+    :persistent_term.put(:srt_receiver, self())
+
+    defmodule ReceiverHandler do
+      @behaviour ExLibSRT.Connection.Handler
+
+      @impl true
+      def init() do
+        :persistent_term.get(:srt_receiver)
+      end
+
+      def handle_connected(conn_id, stream_id, receiver) do
+        send(receiver, {:srt_handler_connected, conn_id, stream_id})
+
+        {:ok, receiver}
+      end
+
+      @impl true
+      def handle_disconnected(receiver) do
+        send(receiver, :srt_handler_disconnected)
+
+        :ok
+      end
+
+      @impl true
+      def handle_data(data, receiver) do
+        send(receiver, {:srt_handler_data, data})
+
+        {:ok, receiver}
+      end
+    end
+
+    assert {:ok, server} = Server.start("0.0.0.0", ctx.srt_port)
+
+    proxy =
+      Transmit.start_streaming_proxy(ctx.udp_port, ctx.srt_port, "data_stream_id")
+
+    stream = Transmit.start_stream(ctx.udp_port)
+
+    assert_receive {:srt_server_connect_request, address, _stream_id}, 2_000
+    assert address == "127.0.0.1"
+
+    assert {:ok, connection} =
+             Server.accept_awaiting_connect_request_with_handler(ReceiverHandler, server)
+
+    assert is_pid(connection)
+
+    refute_receive {:srt_server_conn, _conn_id, _stream_id}, 1_000
+    assert_receive {:srt_handler_connected, _conn_id, _stream_id}, 1_000
+
+    for i <- 1..10 do
+      :ok = Transmit.send_payload(stream, "Hello world! (#{i})")
+    end
+
+    :ok = Transmit.close_stream(stream)
+
+    for i <- 1..10 do
+      assert_receive {:srt_handler_data, payload}, 500
+      assert payload == "Hello world! (#{i})"
+    end
+
+    Transmit.stop_proxy(proxy)
+
+    refute_receive {:srt_server_conn_closed, _conn_id}, 1_000
+    assert_receive :srt_handler_disconnected, 1_000
+  end
+
   defp prepare_streaming(_ctx) do
     udp_port = Enum.random(10_000..20_000)
     srt_port = Enum.random(10_000..20_000)
