@@ -69,11 +69,13 @@ void Server::Stop() {
 }
 
 void Server::CloseConnection(int connection_id) {
-  srt_epoll_remove_usock(epoll, connection_id);
-  srt_close(connection_id);
+  if (auto connection = active_sockets.find(connection_id); connection != std::end(active_sockets)) {
+    srt_epoll_remove_usock(epoll, connection_id);
+    srt_close(connection_id);
 
-  active_sockets.erase(connection_id);
-  this->on_socket_disconnected((SrtSocket)connection_id);
+    active_sockets.erase(connection_id);
+    this->on_socket_disconnected((SrtSocket)connection_id);
+  }
 }
 
 void Server::RunEpoll() {
@@ -99,16 +101,25 @@ void Server::RunEpoll() {
                            0);
 
     if (n < 1) {
+      // clear out the time out error
+      srt_clearlasterror();
+
       continue;
     }
 
     for (int i = 0; i < sockets_len; i++) {
-      if (IsListeningSocket(sockets[i])) {
+      auto socket_state = srt_getsockstate(sockets[i]);
+
+      if (socket_state == SRTS_LISTENING) {
         AcceptConnection();
-      } else if (IsSocketBroken(sockets[i]) || IsSocketClosed(sockets[i])) {
+      } else if (socket_state == SRTS_BROKEN || socket_state == SRTS_CLOSED) {
+        printf("CLOSED %d\n", socket_state == SRTS_CLOSED);
+
         DisconnectSocket(sockets[i]);
-      } else {
+      } else if (socket_state == SRTS_CONNECTED) {
         ReadSocketData(sockets[i]);
+      } else {
+        printf("[WARNING] Encoutnered new socket state, report it to maintainers -> %d\n", socket_state);
       }
     }
 
@@ -206,7 +217,6 @@ bool Server::IsSocketClosed(Server::SrtSocket socket) const {
 
 void Server::DisconnectSocket(Server::SrtSocket socket) {
   srt_epoll_remove_usock(epoll, socket);
-
   srt_close(socket);
 
   active_sockets.erase(socket);

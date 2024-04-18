@@ -48,7 +48,7 @@ defmodule ExLibSRT.Connection do
 
   @impl true
   def init(handler) do
-    {mod, state} =
+    {state, mod} =
       case handler do
         %mod{} ->
           {mod.init(handler), mod}

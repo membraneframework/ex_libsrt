@@ -179,7 +179,7 @@ defmodule ExLibSRT.ServerTest do
       @behaviour ExLibSRT.Connection.Handler
 
       @impl true
-      def init() do
+      def init(_args) do
         :persistent_term.get(:srt_receiver)
       end
 

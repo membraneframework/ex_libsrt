@@ -41,7 +41,11 @@ defmodule ExLibSRT.Client do
   @doc """
   Sends data through the client connection.
   """
-  @spec send_data(binary(), t()) :: :ok | {:error, reason :: String.t()}
+  @spec send_data(binary(), t()) :: :ok | {:error, :payload_too_large | (reason :: String.t())}
+  def send_data(payload, client)
+
+  def send_data(payload, _client) when byte_size(payload) > 1316, do: {:error, :payload_too_large}
+
   def send_data(payload, client) do
     ExLibSRT.Native.send_client_data(payload, client)
   end
