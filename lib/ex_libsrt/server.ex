@@ -56,7 +56,7 @@ defmodule ExLibSRT.Server do
   @spec start(address :: String.t(), port :: non_neg_integer()) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
   def start(address, port) do
-    ExLibSRT.Native.start_server(address, port)
+    ExLibSRT.Native.create_server(address, port)
   end
 
   @doc """

@@ -22,10 +22,12 @@ defmodule ExLibSRT.ClientTest do
 
     assert_receive :srt_client_connected
 
-    for _i <- 0..10 do
-      :ok = Client.send_data("test payload", client)
+    payload = :crypto.strong_rand_bytes(1000)
 
-      assert {:ok, "test payload"} = Transmit.receive_payload(receiver)
+    for _i <- 0..10 do
+      :ok = Client.send_data(payload, client)
+
+      assert {:ok, ^payload} = Transmit.receive_payload(receiver)
     end
   end
 
@@ -38,7 +40,7 @@ defmodule ExLibSRT.ClientTest do
 
     :ok = Client.stop(client)
 
-    {:error, "Client is not active"} = Client.send_data("test payload", client)
+    {:error, "client is not active"} = Client.send_data("test payload", client)
   end
 
   test "get disconnected notification when servers closes", ctx do
@@ -52,7 +54,7 @@ defmodule ExLibSRT.ClientTest do
 
     assert_receive :srt_client_disconnected, 500
 
-    assert {:error, "Client is not active"} = Client.send_data("some payload", client)
+    assert {:error, "client is not active"} = Client.send_data("some payload", client)
   end
 
   test "read socket stats", ctx do

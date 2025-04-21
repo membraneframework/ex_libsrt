@@ -6,11 +6,12 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <srt/srt.h>
 #include <string>
 #include <thread>
-#include <set>
-#include "../common/srt_socket_stats.h"
+
+#include "../common/socket_stats.h"
 
 extern "C" {
 #include <arpa/inet.h>
@@ -34,9 +35,12 @@ public:
 
   void AnswerConnectRequest(int accept);
 
-  SrtSocket GetAwaitingConnectionRequestId() const { return awaiting_connect_request_socket; }
+  SrtSocket GetAwaitingConnectionRequestId() const {
+    return awaiting_connect_request_socket;
+  }
 
-  std::unique_ptr<SrtSocketStats> ReadSocketStats(int socket, bool clear_intervals);
+  std::unique_ptr<SocketStats> ReadSocketStats(int socket,
+                                               bool clear_intervals);
 
   void SetOnSocketConnected(
       std::function<void(SrtSocket, const std::string&)> on_socket_connected) {

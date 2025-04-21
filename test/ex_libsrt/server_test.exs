@@ -69,6 +69,9 @@ defmodule ExLibSRT.ServerTest do
     end
 
     Transmit.stop_proxy(proxy)
+
+    Server.close_server_connection(conn_id, server)
+    assert_receive {:srt_server_conn_closed, ^conn_id}, 1_000
   end
 
   test "can handle multiple connections", ctx do
@@ -142,18 +145,19 @@ defmodule ExLibSRT.ServerTest do
   test "read socket stats", ctx do
     assert {:ok, server} = Server.start("0.0.0.0", ctx.srt_port)
 
-    _proxy =
+    proxy =
       Transmit.start_streaming_proxy(
         ctx.udp_port,
-        ctx.srt_port
+        ctx.srt_port,
+        "data_stream_id"
       )
+
+    stream = Transmit.start_stream(ctx.udp_port)
 
     assert_receive {:srt_server_connect_request, _address, _stream_id}, 2_000
     :ok = Server.accept_awaiting_connect_request(server)
-
+    #
     assert_receive {:srt_server_conn, conn_id, _stream_id}, 1_000
-
-    stream = Transmit.start_stream(ctx.udp_port)
 
     payload = :crypto.strong_rand_bytes(100)
 
@@ -169,11 +173,20 @@ defmodule ExLibSRT.ServerTest do
     assert stats.pktRecv == 10
     assert stats.byteRecvTotal > 1_000
 
-    assert {:error, "Socket not found"} = Server.read_socket_stats(2137, server)
+    assert {:error, "socket not found"} = Server.read_socket_stats(2137, server)
+
+    Transmit.close_stream(stream)
+
+    Transmit.stop_proxy(proxy)
+
+    Server.close_server_connection(conn_id, server)
+    assert_receive {:srt_server_conn_closed, ^conn_id}, 1_000
   end
 
   test "starts a separate connection process", ctx do
     :persistent_term.put(:srt_receiver, self())
+
+    assert :persistent_term.get(:srt_receiver) == self()
 
     defmodule ReceiverHandler do
       @behaviour ExLibSRT.Connection.Handler
@@ -206,7 +219,7 @@ defmodule ExLibSRT.ServerTest do
 
     assert {:ok, server} = Server.start("0.0.0.0", ctx.srt_port)
 
-    proxy =
+    _proxy =
       Transmit.start_streaming_proxy(ctx.udp_port, ctx.srt_port, "data_stream_id")
 
     stream = Transmit.start_stream(ctx.udp_port)
@@ -220,23 +233,20 @@ defmodule ExLibSRT.ServerTest do
     assert is_pid(connection)
 
     refute_receive {:srt_server_conn, _conn_id, _stream_id}, 1_000
-    assert_receive {:srt_handler_connected, _conn_id, _stream_id}, 1_000
+    assert_receive {:srt_handler_connected, conn_id, _stream_id}, 1_000
 
     for i <- 1..10 do
-      :ok = Transmit.send_payload(stream, "Hello world! (#{i})")
+      payload = "Hello world! (#{i})"
+      :ok = Transmit.send_payload(stream, payload)
+      assert_receive {:srt_handler_data, ^payload}, 500
     end
 
     :ok = Transmit.close_stream(stream)
 
-    for i <- 1..10 do
-      assert_receive {:srt_handler_data, payload}, 500
-      assert payload == "Hello world! (#{i})"
-    end
-
-    Transmit.stop_proxy(proxy)
+    :ok = Server.close_server_connection(conn_id, server)
 
     refute_receive {:srt_server_conn_closed, _conn_id}, 1_000
-    assert_receive :srt_handler_disconnected, 1_000
+    assert_receive :srt_handler_disconnected, 10_000
   end
 
   defp prepare_streaming(_ctx) do

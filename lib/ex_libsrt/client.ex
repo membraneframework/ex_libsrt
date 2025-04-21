@@ -27,7 +27,7 @@ defmodule ExLibSRT.Client do
   @spec start(address :: String.t(), port :: non_neg_integer(), stream_id :: String.t()) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
   def start(address, port, stream_id) do
-    ExLibSRT.Native.start_client(address, port, stream_id)
+    ExLibSRT.Native.create_client(address, port, stream_id)
   end
 
   @doc """

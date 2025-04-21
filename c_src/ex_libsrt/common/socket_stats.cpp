@@ -1,8 +1,7 @@
-#include "srt_socket_stats.h"
-
+#include "socket_stats.h"
 #include <srt/srt.h>
 
-std::unique_ptr<SrtSocketStats> readSrtSocketStats(int socket, bool clean_intervals) {
+std::unique_ptr<SocketStats> readSocketStats(int socket, bool clean_intervals) {
   SRT_TRACEBSTATS trace;
 
   int result = srt_bstats(socket, &trace, (int)clean_intervals);
@@ -10,7 +9,7 @@ std::unique_ptr<SrtSocketStats> readSrtSocketStats(int socket, bool clean_interv
     return nullptr;
   }
 
-  auto stats = std::make_unique<SrtSocketStats>();
+  auto stats = std::make_unique<SocketStats>();
 
   stats->msTimeStamp = trace.msTimeStamp;
   stats->pktSentTotal = trace.pktSentTotal;
@@ -67,4 +66,3 @@ std::unique_ptr<SrtSocketStats> readSrtSocketStats(int socket, bool clean_interv
 
   return stats;
 }
-

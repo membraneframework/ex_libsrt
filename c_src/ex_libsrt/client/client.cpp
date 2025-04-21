@@ -1,8 +1,8 @@
 #include "client.h"
 
+#include <chrono>
 #include <exception>
 #include <utility>
-#include <chrono>
 
 Client::~Client() {
   if (epoll != -1) {
@@ -59,7 +59,7 @@ void Client::Run(const char* address, int port, const char* stream_id) {
   }
 
   int result = srt_connect(srt_sock, (struct sockaddr*)&sa, sizeof sa);
-  if (result == SRT_ERROR)  {
+  if (result == SRT_ERROR) {
     auto code = srt_getrejectreason(srt_sock);
 
     throw StreamRejectedException(code);
@@ -72,19 +72,20 @@ void Client::Run(const char* address, int port, const char* stream_id) {
 void Client::Send(std::unique_ptr<char[]> data, int len) {
   if (running.load()) {
     auto lock = std::unique_lock(send_mutex);
-    send_cv.wait(lock,
-                 [&] { return (int)send_queue.size() < max_pending_messages || running.load(); });
+    send_cv.wait(lock, [&] {
+      return (int)send_queue.size() < max_pending_messages || running.load();
+    });
 
     send_queue.emplace_back(std::move(data), len);
   } else {
-    throw std::runtime_error("Client is not active");
+    throw std::runtime_error("client is not active");
   }
 
   send_cv.notify_all();
 }
 
-std::unique_ptr<SrtSocketStats> Client::ReadSocketStats(bool clear_intervals) {
-  return readSrtSocketStats(srt_sock, clear_intervals);
+std::unique_ptr<SocketStats> Client::ReadSocketStats(bool clear_intervals) {
+  return readSocketStats(srt_sock, clear_intervals);
 }
 
 void Client::Stop() {
@@ -177,12 +178,13 @@ void Client::RunEpoll() {
       if (read_out_len > 0) {
         auto lock = std::unique_lock(send_mutex);
 
-        auto sendable = send_cv.wait_for(
-            lock,
-            std::chrono::milliseconds(500),
-            [&] { return !this->send_queue.empty() || !running.load(); });
+        auto sendable =
+            send_cv.wait_for(lock, std::chrono::milliseconds(500), [&] {
+              return !this->send_queue.empty() || !running.load();
+            });
 
-        // we are waiting with timeout to make sure that we catch a socket disconnect event even when blocking
+        // we are waiting with timeout to make sure that we catch a socket
+        // disconnect event even when blocking
         if (!sendable) {
           continue;
         }

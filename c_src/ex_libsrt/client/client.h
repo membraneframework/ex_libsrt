@@ -1,29 +1,31 @@
+#pragma once
+
+#include "../common/socket_stats.h"
 #include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
 #include <srt/srt.h>
 #include <thread>
-#include "../common/srt_socket_stats.h"
 
 class Client {
 public:
   using SrtSocket = int;
   using SrtEpoll = int;
 
-
   class StreamRejectedException : public std::exception {
   public:
-      StreamRejectedException(int code) : message("Stream rejected by server"), code(code) {}
+    StreamRejectedException(int code)
+        : message("Stream rejected by server"), code(code) {}
 
-      const char* what() const noexcept override { return message.c_str(); }
+    const char* what() const noexcept override { return message.c_str(); }
 
-      int GetCode() const { return code - SRT_REJC_PREDEFINED; }
+    int GetCode() const { return code - SRT_REJC_PREDEFINED; }
+
   private:
     std::string message;
     int code;
   };
-    
 
   Client(int max_pending_messages, int send_ttl)
       : max_pending_messages(max_pending_messages), send_ttl(send_ttl) {}
@@ -32,7 +34,7 @@ public:
 
   void Run(const char* address, int port, const char* stream_id);
   void Send(std::unique_ptr<char[]> data, int len);
-  std::unique_ptr<SrtSocketStats> ReadSocketStats(bool clear_intervals);
+  std::unique_ptr<SocketStats> ReadSocketStats(bool clear_intervals);
   void Stop();
 
   void

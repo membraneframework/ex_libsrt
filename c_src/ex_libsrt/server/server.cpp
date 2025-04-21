@@ -3,7 +3,6 @@
 #include <chrono>
 #include <exception>
 #include <string>
-#include <unifex/unifex.h>
 
 void Server::Run(const char* address, int port) {
   srt_sock = srt_create_socket();
@@ -28,6 +27,10 @@ void Server::Run(const char* address, int port) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
   }
 
+  srt_listen_callback(srt_sock,
+                      (srt_listen_callback_fn*)&Server::ListenAcceptCallback,
+                      (void*)this);
+
   srt_bind_sock = srt_listen(srt_sock, MAX_PENDING_CONNECTIONS);
   if (srt_bind_sock == SRT_ERROR) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
@@ -41,18 +44,15 @@ void Server::Run(const char* address, int port) {
   const int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
   srt_epoll_add_usock(epoll, srt_sock, &read_modes);
 
-  srt_listen_callback(srt_sock,
-                      (srt_listen_callback_fn*)&Server::ListenAcceptCallback,
-                      (void*)this);
-
   running.store(true);
 
   epoll_loop = std::thread(&Server::RunEpoll, this);
 }
 
-std::unique_ptr<SrtSocketStats> Server::ReadSocketStats(int socket, bool clear_intervals) {
+std::unique_ptr<SocketStats> Server::ReadSocketStats(int socket,
+                                                     bool clear_intervals) {
   if (active_sockets.find(socket) != std::end(active_sockets)) {
-    return readSrtSocketStats(socket, clear_intervals);
+    return readSocketStats(socket, clear_intervals);
   }
 
   return nullptr;
@@ -64,12 +64,19 @@ void Server::Stop() {
     epoll_loop.join();
   }
 
-  srt_epoll_release(epoll);
-  srt_close(srt_sock);
+  if (epoll != 0) {
+    srt_epoll_release(epoll);
+    epoll = 0;
+  }
+  if (srt_sock != 0) {
+    srt_close(srt_sock);
+    srt_sock = 0;
+  }
 }
 
 void Server::CloseConnection(int connection_id) {
-  if (auto connection = active_sockets.find(connection_id); connection != std::end(active_sockets)) {
+  if (auto connection = active_sockets.find(connection_id);
+      connection != std::end(active_sockets)) {
     srt_epoll_remove_usock(epoll, connection_id);
     srt_close(connection_id);
 
@@ -80,10 +87,10 @@ void Server::CloseConnection(int connection_id) {
 
 void Server::RunEpoll() {
   int sockets_len = 100;
-  SrtSocket sockets[sockets_len];
+  SrtSocket* sockets = new SrtSocket[sockets_len];
 
   int broken_sockets_len = 100;
-  SrtSocket broken_sockets[broken_sockets_len];
+  SrtSocket* broken_sockets = new SrtSocket[broken_sockets_len];
 
   while (running.load()) {
     sockets_len = 100;
@@ -110,16 +117,16 @@ void Server::RunEpoll() {
     for (int i = 0; i < sockets_len; i++) {
       auto socket_state = srt_getsockstate(sockets[i]);
 
-      if (socket_state == SRTS_LISTENING) {
+      if (socket_state == SRTS_LISTENING && sockets[i] == srt_sock) {
         AcceptConnection();
       } else if (socket_state == SRTS_BROKEN || socket_state == SRTS_CLOSED) {
-        printf("CLOSED %d\n", socket_state == SRTS_CLOSED);
-
         DisconnectSocket(sockets[i]);
       } else if (socket_state == SRTS_CONNECTED) {
         ReadSocketData(sockets[i]);
       } else {
-        printf("[WARNING] Encoutnered new socket state, report it to maintainers -> %d\n", socket_state);
+        printf("[WARNING] Encoutnered new socket state, report it to "
+               "maintainers -> %d\n",
+               socket_state);
       }
     }
 
@@ -137,6 +144,8 @@ void Server::RunEpoll() {
       }
     }
   }
+  delete[] sockets;
+  delete[] broken_sockets;
 }
 
 int Server::ListenAcceptCallback(void* opaque,
@@ -176,11 +185,10 @@ int Server::OnNewConnection(SRTSOCKET ns,
 
   this->on_connect_request(address, streamid);
 
-  // NOTE: this check should be very fast as it blocks any receiving on the socket
   auto result = accept_cv.wait_for(lock, std::chrono::milliseconds(1000));
-
   if (result == std::cv_status::timeout) {
     srt_setrejectreason(ns, SRT_REJC_PREDEFINED + 504);
+    fflush(stdout);
 
     return -1;
   } else if (!accept_awaiting_stream_id) {

@@ -7,8 +7,9 @@ defmodule ExLibSRT.MixProject do
       version: "0.1.0",
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
+      make_env: fn -> %{"FINE_INCLUDE_DIR" => Fine.include_dir()} end,
       start_permanent: Mix.env() == :prod,
-      compilers: Mix.compilers() ++ [:unifex, :bundlex],
+      compilers: [:elixir_make] ++ Mix.compilers(),
       deps: deps()
     ]
   end
@@ -24,8 +25,9 @@ defmodule ExLibSRT.MixProject do
 
   defp deps do
     [
-      {:unifex, "~> 1.2.0"},
-      {:credo, "~> 1.4", only: :dev, runtime: false},
+      {:fine, "~> 0.1.0", runtime: false},
+      {:elixir_make, "~> 0.9.0"},
+      {:credo, "~> 1.7", only: :dev, runtime: false},
       {:dialyxir, "~> 1.1", only: :dev, runtime: false},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false}
     ]

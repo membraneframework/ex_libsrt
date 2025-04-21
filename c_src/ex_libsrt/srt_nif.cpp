@@ -1,13 +1,14 @@
-#include "srt_nif.h"
-#include <cstdlib>
-#include <thread>
+#include <fine.hpp>
 
-#include <srt/srt.h>
+#include "client/client.h"
+#include "common/socket_stats.h"
+#include "server/server.h"
+#include <memory>
+#include <shared_mutex>
+#include <string>
+#include <variant>
 
-int on_load(UnifexEnv* env, void** priv_data) {
-  UNIFEX_UNUSED(env);
-  UNIFEX_UNUSED(priv_data);
-
+int64_t on_load(ErlNifEnv*) {
   srt_startup();
 
   if (const char* env_p = std::getenv("SRT_LOG_LEVEL")) {
@@ -29,308 +30,328 @@ int on_load(UnifexEnv* env, void** priv_data) {
   return 0;
 }
 
-void on_unload(UnifexEnv* env, void* priv_data) {
-  UNIFEX_UNUSED(env);
-  UNIFEX_UNUSED(priv_data);
+FINE_NIF(on_load, ERL_NIF_DIRTY_JOB_IO_BOUND);
 
-  srt_cleanup();
-}
+struct ServerContext {
+  ErlNifPid owner;
+  ErlNifEnv* env;
+  std::unordered_map<int, ErlNifPid> conn_receivers;
+  std::shared_mutex conn_receivers_mutex;
 
-void handle_destroy_state(UnifexEnv* env, UnifexState* state) {
-  UNIFEX_UNUSED(env);
+  ServerContext() { this->env = enif_alloc_env(); }
 
-  if (state->server) {
-    state->server->Stop();
+  void BindOwner(ErlNifEnv* env) {
+    if (enif_self(env, &this->owner) == nullptr) {
+      throw std::runtime_error("failed to bind owner pid");
+    }
   }
 
-  if (state->client) {
-    state->client->Stop();
+  ~ServerContext() { enif_free_env(this->env); }
+};
+
+struct ServerResource {
+  std::unique_ptr<Server> server;
+  std::shared_ptr<ServerContext> ctx;
+
+  ServerResource(std::unique_ptr<Server> server,
+                 std::shared_ptr<ServerContext> ctx)
+      : server{std::move(server)}, ctx{std::move(ctx)} {};
+
+  void destructor(ErlNifEnv*) {
+    if (server != nullptr) {
+      server->Stop();
+    }
   }
+};
 
-  state->~State();
-}
+FINE_RESOURCE(ServerResource);
 
-srt_socket_stats map_socket_stats(SrtSocketStats* stats) {
-  srt_socket_stats srt_stats;
+std::variant<fine::Ok<fine::ResourcePtr<ServerResource>>,
+             fine::Error<std::string>>
+create_server(ErlNifEnv* env, std::string address, int64_t port) {
+  auto server = std::make_unique<Server>();
+  auto ctx = std::make_shared<ServerContext>();
 
-  srt_stats.msTimeStamp = stats->msTimeStamp;
-  srt_stats.pktSentTotal = stats->pktSentTotal;
-  srt_stats.pktRecvTotal = stats->pktRecvTotal;
-  srt_stats.pktSentUniqueTotal = stats->pktSentUniqueTotal;
-  srt_stats.pktRecvUniqueTotal = stats->pktRecvUniqueTotal;
-  srt_stats.pktSndLossTotal = stats->pktSndLossTotal;
-  srt_stats.pktRcvLossTotal = stats->pktRcvLossTotal;
-  srt_stats.pktRetransTotal = stats->pktRetransTotal;
-  srt_stats.pktSentACKTotal = stats->pktSentACKTotal;
-  srt_stats.pktRecvACKTotal = stats->pktRecvACKTotal;
-  srt_stats.pktSentNAKTotal = stats->pktSentNAKTotal;
-  srt_stats.pktRecvNAKTotal = stats->pktRecvNAKTotal;
-  srt_stats.usSndDurationTotal = stats->usSndDurationTotal;
-  srt_stats.pktSndDropTotal = stats->pktSndDropTotal;
-  srt_stats.pktRcvDropTotal = stats->pktRcvDropTotal;
-  srt_stats.pktRcvUndecryptTotal = stats->pktRcvUndecryptTotal;
-  srt_stats.pktSndFilterExtraTotal = stats->pktSndFilterExtraTotal;
-  srt_stats.pktRcvFilterExtraTotal = stats->pktRcvFilterExtraTotal;
-  srt_stats.pktRcvFilterSupplyTotal = stats->pktRcvFilterSupplyTotal;
-  srt_stats.pktRcvFilterLossTotal = stats->pktRcvFilterLossTotal;
-  srt_stats.byteSentTotal = stats->byteSentTotal;
-  srt_stats.byteRecvTotal = stats->byteRecvTotal;
-  srt_stats.byteSentUniqueTotal = stats->byteSentUniqueTotal;
-  srt_stats.byteRecvUniqueTotal = stats->byteRecvUniqueTotal;
-  srt_stats.byteRcvLossTotal = stats->byteRcvLossTotal;
-  srt_stats.byteRetransTotal = stats->byteRetransTotal;
-  srt_stats.byteSndDropTotal = stats->byteSndDropTotal;
-  srt_stats.byteRcvDropTotal = stats->byteRcvDropTotal;
-  srt_stats.byteRcvUndecryptTotal = stats->byteRcvUndecryptTotal;
-  srt_stats.pktSent = stats->pktSent;
-  srt_stats.pktRecv = stats->pktRecv;
-  srt_stats.pktSentUnique = stats->pktSentUnique;
-  srt_stats.pktRecvUnique = stats->pktRecvUnique;
-  srt_stats.pktSndLoss = stats->pktSndLoss;
-  srt_stats.pktRcvLoss = stats->pktRcvLoss;
-  srt_stats.pktRetrans = stats->pktRetrans;
-  srt_stats.pktRcvRetrans = stats->pktRcvRetrans;
-  srt_stats.pktSentACK = stats->pktSentACK;
-  srt_stats.pktRecvACK = stats->pktRecvACK;
-  srt_stats.pktSentNAK = stats->pktSentNAK;
-  srt_stats.pktRecvNAK = stats->pktRecvNAK;
-  srt_stats.pktSndFilterExtra = stats->pktSndFilterExtra;
-  srt_stats.pktRcvFilterExtra = stats->pktRcvFilterExtra;
-  srt_stats.pktRcvFilterSupply = stats->pktRcvFilterSupply;
-  srt_stats.pktRcvFilterLoss = stats->pktRcvFilterLoss;
-  srt_stats.mbpsSendRate = stats->mbpsSendRate;
-  srt_stats.mbpsRecvRate = stats->mbpsRecvRate;
-  srt_stats.usSndDuration = stats->usSndDuration;
-  srt_stats.pktReorderDistance = stats->pktReorderDistance;
-  srt_stats.pktRcvBelated = stats->pktRcvBelated;
-  srt_stats.pktSndDrop = stats->pktSndDrop;
-  srt_stats.pktRcvDrop = stats->pktRcvDrop;
+  ctx->BindOwner(env);
 
-  return srt_stats;
-}
+  server->SetOnSocketConnected([=](Server::SrtSocket socket,
+                                   const std::string& stream_id) {
+    std::lock_guard lock(ctx->conn_receivers_mutex);
+    if (auto it = ctx->conn_receivers.find(socket);
+        it != std::end(ctx->conn_receivers)) {
+      auto pid = it->second;
+      auto term = fine::encode(ctx->env,
+                               std::make_tuple(fine::Atom("srt_server_conn"),
+                                               (int64_t)socket,
+                                               std::string{stream_id}));
+      enif_send(nullptr, &pid, ctx->env, term);
+    }
+  });
 
-UNIFEX_TERM start_server(UnifexEnv* env, char* address, int port) {
-  State* state = unifex_alloc_state(env);
-  state = new (state) State();
+  server->SetOnSocketDisconnected([=](Server::SrtSocket socket) {
+    std::lock_guard lock(ctx->conn_receivers_mutex);
 
-  try {
-    state->env = unifex_alloc_env(env);
-    if (!unifex_self(env, &state->owner)) {
-      throw new std::runtime_error("failed to create native state");
-    };
+    if (auto it = ctx->conn_receivers.find(socket);
+        it != std::end(ctx->conn_receivers)) {
+      auto pid = it->second;
+      auto term =
+          fine::encode(ctx->env,
+                       std::make_tuple(fine::Atom("srt_server_conn_closed"),
+                                       (int64_t)socket));
+      enif_send(nullptr, &pid, ctx->env, term);
+    }
 
-    state->server = std::make_unique<Server>();
+    ctx->conn_receivers.erase(socket);
+  });
 
-    state->server->SetOnSocketConnected(
-        [=](Server::SrtSocket socket, const std::string& stream_id) {
-          std::lock_guard lock(state->conn_receivers_mutex);
+  server->SetOnSocketData(
+      [=](Server::SrtSocket socket, const char* data, int len) {
+        ErlNifBinary binary;
+        enif_alloc_binary(len, &binary);
+        memcpy(binary.data, data, len);
 
-          if (auto it = state->conn_receivers.find(socket); it != std::end(state->conn_receivers)) {
-            send_srt_server_conn(
-                state->env, it->second, 1, socket, stream_id.c_str());
+        enif_make_binary(ctx->env, &binary);
+
+        {
+          std::unique_lock lock(ctx->conn_receivers_mutex);
+          if (auto it = ctx->conn_receivers.find(socket);
+              it != std::end(ctx->conn_receivers)) {
+            auto pid = it->second;
+            auto term = fine::encode(ctx->env,
+                                     std::make_tuple(fine::Atom("srt_data"),
+                                                     (int64_t)socket,
+                                                     binary));
+            enif_send(nullptr, &pid, ctx->env, term);
+            enif_clear_env(ctx->env);
+            enif_release_binary(&binary);
           }
+        }
 
-        });
+        enif_release_binary(&binary);
+      });
 
-    state->server->SetOnSocketDisconnected([=](Server::SrtSocket socket) {
-      std::lock_guard lock(state->conn_receivers_mutex);
+  server->SetOnConnectRequest(
+      [=](const std::string& address, const std::string& stream_id) {
+        auto term = fine::encode(
+            ctx->env,
+            std::make_tuple(
+                fine::Atom("srt_server_connect_request"), address, stream_id));
+        enif_send(nullptr, &ctx->owner, ctx->env, term);
+      });
 
-      if (auto it = state->conn_receivers.find(socket); it != std::end(state->conn_receivers)) {
-        send_srt_server_conn_closed(state->env, it->second, 1, socket);
-      }
+  server->Run(address.c_str(), port);
 
-      state->conn_receivers.erase(socket);
-    });
-
-    state->server->SetOnSocketData(
-        [=](Server::SrtSocket socket, const char* data, int len) {
-          UnifexPayload* payload =
-              (UnifexPayload*)unifex_alloc(sizeof(UnifexPayload*));
-
-          unifex_payload_alloc(state->env, UNIFEX_PAYLOAD_BINARY, len, payload);
-
-          memcpy(payload->data, data, len);
-
-          {
-            std::unique_lock lock(state->conn_receivers_mutex);
-            if (auto it = state->conn_receivers.find(socket); it != std::end(state->conn_receivers)) {
-              // TODO: make sure that the message has been properly sent
-              send_srt_data(state->env, it->second, 1, socket, payload);
-            }
-          }
-
-          unifex_payload_release(payload);
-
-          unifex_free(payload);
-        });
-
-    state->server->SetOnConnectRequest(
-        [=](const std::string& address, const std::string& stream_id) {
-          send_srt_server_connect_request(
-              state->env, state->owner, 1, address.c_str(), stream_id.c_str());
-        });
-
-    state->server->Run(address, port);
-
-    UNIFEX_TERM result = start_server_result_ok(env, state);
-    unifex_release_state(env, state);
-
-    return result;
-  } catch (const std::exception& e) {
-    unifex_release_state(env, state);
-
-    return start_server_result_error(env, e.what());
-  }
+  return fine::Ok(
+      fine::make_resource<ServerResource>(std::move(server), std::move(ctx)));
 }
 
-UNIFEX_TERM accept_awaiting_connect_request(UnifexEnv *env, UnifexPid receiver,
-                                            UnifexState *state) {
-  if (state->server == nullptr) {
-    return accept_awaiting_connect_request_result_error(env, "Server is not active");
+FINE_NIF(create_server, ERL_NIF_DIRTY_JOB_IO_BOUND);
+
+std::variant<fine::Ok<>, fine::Error<std::string>>
+accept_awaiting_connect_request(ErlNifEnv*,
+                                ErlNifPid receiver,
+                                fine::ResourcePtr<ServerResource> resource) {
+  if (resource->server == nullptr) {
+    return fine::Error<std::string>("server is not active");
   }
 
-  auto id = state->server->GetAwaitingConnectionRequestId();
-  state->server->AnswerConnectRequest(true);
+  auto id = resource->server->GetAwaitingConnectionRequestId();
+  resource->server->AnswerConnectRequest(true);
 
-  std::lock_guard lock(state->conn_receivers_mutex);
-  state->conn_receivers.insert({id, receiver});
-
-  return accept_awaiting_connect_request_result_ok(env);
+  std::lock_guard lock(resource->ctx->conn_receivers_mutex);
+  resource->ctx->conn_receivers.insert({id, receiver});
+  return fine::Ok();
 }
 
-UNIFEX_TERM read_server_socket_stats(UnifexEnv* env, int conn_id, UnifexState* state) {
-  if (state->server == nullptr) {
-    return read_server_socket_stats_result_error(env, "Server is not active");
+FINE_NIF(accept_awaiting_connect_request, ERL_NIF_DIRTY_JOB_IO_BOUND);
+
+std::variant<fine::Ok<SocketStats>, fine::Error<std::string>>
+read_server_socket_stats(ErlNifEnv*,
+                         int64_t conn_id,
+                         fine::ResourcePtr<ServerResource> resource) {
+  if (resource->server == nullptr) {
+    return fine::Error<std::string>("server is not active");
   }
 
-  auto stats = state->server->ReadSocketStats(conn_id, true);
+  auto stats = resource->server->ReadSocketStats(conn_id, true);
   if (!stats) {
-    return read_server_socket_stats_result_error(env, "Socket not found");
+    return fine::Error<std::string>("socket not found");
   }
 
-  auto srt_stats = map_socket_stats(stats.get());
+  SocketStats socket_stats = *stats;
 
-  return read_server_socket_stats_result_ok(env, srt_stats);
+  return fine::Ok(socket_stats);
 }
 
-UNIFEX_TERM reject_awaiting_connect_request(UnifexEnv* env,
-                                            UnifexState* state) {
-  if (state->server == nullptr) {
-    return accept_awaiting_connect_request_result_error(env, "Server is not active");
+FINE_NIF(read_server_socket_stats, ERL_NIF_DIRTY_JOB_IO_BOUND);
+
+std::variant<fine::Ok<>, fine::Error<std::string>>
+reject_awaiting_connect_request(ErlNifEnv*,
+                                fine::ResourcePtr<ServerResource> resource) {
+  if (resource->server == nullptr) {
+    return fine::Error<std::string>("server is not active");
   }
 
-  state->server->AnswerConnectRequest(false);
+  resource->server->AnswerConnectRequest(false);
 
-  return accept_awaiting_connect_request_result_ok(env);
+  return fine::Ok();
 }
 
+FINE_NIF(reject_awaiting_connect_request, ERL_NIF_DIRTY_JOB_IO_BOUND);
 
-UNIFEX_TERM stop_server(UnifexEnv* env, UnifexState* state) {
-  if (state->server) {
-    state->server->Stop();
-    state->server = nullptr;
+fine::Ok<> stop_server(ErlNifEnv*, fine::ResourcePtr<ServerResource> resource) {
+  if (resource->server) {
+    resource->server->Stop();
+    resource->server = nullptr;
   }
+  resource->ctx = nullptr;
 
-  return stop_server_result_ok(env);
+  return fine::Ok();
 }
 
-UNIFEX_TERM
-close_server_connection(UnifexEnv* env, int conn_id, UnifexState* state) {
-  if (state->server == nullptr) {
-    return accept_awaiting_connect_request_result_error(env, "Server is not active");
+FINE_NIF(stop_server, ERL_NIF_DIRTY_JOB_IO_BOUND);
+
+std::variant<fine::Ok<>, fine::Error<std::string>> close_server_connection(
+    ErlNifEnv*, int64_t conn_id, fine::ResourcePtr<ServerResource> resource) {
+  if (resource->server == nullptr) {
+    return fine::Error<std::string>("server is not active");
   }
 
-  if (state->server) {
-    state->server->CloseConnection(conn_id);
+  if (resource->server) {
+    resource->server->CloseConnection(conn_id);
   }
 
-  return close_server_connection_result_ok(env);
+  return fine::Ok();
 }
 
-UNIFEX_TERM
-start_client(UnifexEnv* env, char* server_address, int port, char* stream_id) {
-  State* state = unifex_alloc_state(env);
-  state = new (state) State();
+FINE_NIF(close_server_connection, ERL_NIF_DIRTY_JOB_IO_BOUND);
 
+struct ClientContext {
+  ErlNifPid owner;
+  ErlNifEnv* env;
+
+  ClientContext() { this->env = enif_alloc_env(); }
+
+  void BindOwner(ErlNifEnv* env) {
+    if (enif_self(env, &this->owner) == nullptr) {
+      throw std::runtime_error("failed to bind owner pid");
+    }
+  }
+
+  ErlNifPid* Owner() { return &this->owner; }
+
+  ~ClientContext() { enif_free_env(this->env); }
+};
+
+struct ClientResource {
+  std::unique_ptr<Client> client;
+  std::shared_ptr<ClientContext> ctx;
+
+  ClientResource(std::unique_ptr<Client> client,
+                 std::shared_ptr<ClientContext> ctx)
+      : client{std::move(client)}, ctx{std::move(ctx)} {}
+
+  void destructor(ErlNifEnv*) {
+    if (client != nullptr) {
+      client->Stop();
+    }
+  }
+};
+
+FINE_RESOURCE(ClientResource);
+
+std::variant<fine::Ok<fine::ResourcePtr<ClientResource>>,
+             fine::Error<std::string, int64_t>>
+create_client(ErlNifEnv* env,
+              std::string server_address,
+              int64_t port,
+              std::string stream_id) {
   try {
-    state->env = unifex_alloc_env(env);
-    if (!unifex_self(env, &state->owner)) {
-      throw new std::runtime_error("failed to create native state");
-    };
+    auto client = std::make_unique<Client>(1000, 200);
+    auto ctx = std::make_shared<ClientContext>();
+    ctx->BindOwner(env);
 
-    state->client = std::make_unique<Client>(10, 200);
-
-    state->client->SetOnSocketConnected(
-        [=]() { send_srt_client_connected(state->env, state->owner, 1); });
-
-    state->client->SetOnSocketDisconnected(
-        [=]() { send_srt_client_disconnected(state->env, state->owner, 1); });
-
-    state->client->SetOnSocketError([=](const std::string& reason) {
-      send_srt_client_error(state->env, state->owner, 1, reason.c_str());
+    client->SetOnSocketConnected([=]() {
+      auto term = fine::encode(ctx->env, fine::Atom("srt_client_connected"));
+      enif_send(nullptr, &ctx->owner, ctx->env, term);
     });
 
-    state->client->Run(server_address, port, stream_id);
+    client->SetOnSocketDisconnected([=]() {
+      auto term = fine::encode(ctx->env, fine::Atom("srt_client_disconnected"));
+      enif_send(nullptr, &ctx->owner, ctx->env, term);
+    });
 
-    UNIFEX_TERM result = start_client_result_ok(env, state);
-    unifex_release_state(env, state);
+    client->SetOnSocketError([=](const std::string& reason) {
+      auto term = fine::encode(
+          ctx->env, std::make_tuple(fine::Atom("srt_client_error"), reason));
+      enif_send(nullptr, &ctx->owner, ctx->env, term);
+    });
 
-    return result;
+    client->Run(server_address.c_str(), port, stream_id.c_str());
+
+    return fine::Ok<fine::ResourcePtr<ClientResource>>(
+        fine::make_resource<ClientResource>(std::move(client), std::move(ctx)));
   } catch (const Client::StreamRejectedException& e) {
     auto code = e.GetCode();
 
-    unifex_release_state(env, state);
-
-    return start_client_result_error(env, e.what(), code);
+    return fine::Error<std::string, int64_t>(e.what(), code);
   } catch (const std::exception& e) {
-    unifex_release_state(env, state);
-
-    return start_client_result_error(env, e.what(), -1);
+    return fine::Error<std::string, int64_t>(e.what(), -1);
   }
 }
 
+FINE_NIF(create_client, ERL_NIF_DIRTY_JOB_CPU_BOUND);
 
-UNIFEX_TERM
-send_client_data(UnifexEnv* env, UnifexPayload* payload, UnifexState* state) {
-  if (state->client == nullptr) {
-    return send_client_data_result_error(env, "Client is not active");
-  } 
+std::variant<fine::Ok<>, fine::Error<std::string>>
+send_client_data(ErlNifEnv*,
+                 ErlNifBinary payload,
+                 fine::ResourcePtr<ClientResource> resource) {
+  if (resource->client == nullptr) {
+    return fine::Error<std::string>("client is not active");
+  }
 
   try {
-    auto buffer = std::unique_ptr<char[]>(new char[payload->size]);
+    auto buffer = std::unique_ptr<char[]>(new char[payload.size]);
+    memcpy(buffer.get(), payload.data, payload.size);
 
-    memcpy(buffer.get(), payload->data, payload->size);
+    resource->client->Send(std::move(buffer), payload.size);
 
-    state->client->Send(std::move(buffer), payload->size);
-
-    return send_client_data_result_ok(env);
+    return fine::Ok<>();
   } catch (const std::exception& e) {
-    return send_client_data_result_error(env, e.what());
+    return fine::Error<std::string>(e.what());
   }
 }
 
-UNIFEX_TERM read_client_socket_stats(UnifexEnv* env, UnifexState* state) {
-  if (state->client == nullptr) {
-    return read_client_socket_stats_result_error(env, "Client is not active");
+FINE_NIF(send_client_data, ERL_NIF_DIRTY_JOB_IO_BOUND);
+
+std::variant<fine::Ok<SocketStats>, fine::Error<std::string>>
+read_client_socket_stats(ErlNifEnv*,
+                         fine::ResourcePtr<ClientResource> resource) {
+  if (resource->client == nullptr) {
+    return fine::Error<std::string>("client is not active");
   }
 
-  auto stats = state->client->ReadSocketStats(true);
+  auto stats = resource->client->ReadSocketStats(true);
   if (!stats) {
-    return read_client_socket_stats_result_error(env, "Failed to read client socket stats");
+    return fine::Error<std::string>("failed to read client socket stats");
   }
-
-  auto srt_stats = map_socket_stats(stats.get());
-
-  return read_client_socket_stats_result_ok(env, srt_stats);
+  SocketStats socket_stats = *stats;
+  return fine::Ok<SocketStats>(socket_stats);
 }
 
-UNIFEX_TERM stop_client(UnifexEnv* env, UnifexState* state) {
-  if (state->client == nullptr) {
-    return stop_client_result_error(env, "Client is not active");
+FINE_NIF(read_client_socket_stats, ERL_NIF_DIRTY_JOB_IO_BOUND);
+
+std::variant<fine::Ok<>, fine::Error<std::string>>
+stop_client(ErlNifEnv*, fine::ResourcePtr<ClientResource> resource) {
+  if (resource->client == nullptr) {
+    return fine::Error<std::string>("client is not active");
   }
 
-  state->client->Stop();
-  state->client = nullptr;
+  resource->client->Stop();
+  resource->client = nullptr;
 
-  return stop_client_result_ok(env);
+  return fine::Ok<>();
 }
+FINE_NIF(stop_client, ERL_NIF_DIRTY_JOB_IO_BOUND);
+
+FINE_INIT("Elixir.ExLibSRT.Native");
