@@ -44,7 +44,6 @@ void Server::Run(const char* address, int port) {
   const int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
   srt_epoll_add_usock(epoll, srt_sock, &read_modes);
 
-
   running.store(true);
 
   epoll_loop = std::thread(&Server::RunEpoll, this);
