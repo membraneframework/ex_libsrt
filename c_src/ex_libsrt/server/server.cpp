@@ -28,6 +28,9 @@ void Server::Run(const char* address, int port) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
   }
 
+  srt_listen_callback(srt_sock,
+                      (srt_listen_callback_fn*)&Server::ListenAcceptCallback,
+                      (void*)this);
   srt_bind_sock = srt_listen(srt_sock, MAX_PENDING_CONNECTIONS);
   if (srt_bind_sock == SRT_ERROR) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
@@ -40,10 +43,6 @@ void Server::Run(const char* address, int port) {
 
   const int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
   srt_epoll_add_usock(epoll, srt_sock, &read_modes);
-
-  srt_listen_callback(srt_sock,
-                      (srt_listen_callback_fn*)&Server::ListenAcceptCallback,
-                      (void*)this);
 
   running.store(true);
 
