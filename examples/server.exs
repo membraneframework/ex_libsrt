@@ -1,5 +1,4 @@
-Mix.install([{:ex_libsrt, path: "../ex_libsrt"}])
-
+Mix.install([{:ex_libsrt, path: "../"}])
 
 defmodule Server do
   use GenServer
@@ -19,7 +18,9 @@ defmodule Server do
 
   @impl true
   def handle_info({:srt_server_connect_request, address, stream_id}, state) do
-    Logger.info("Receiving new connection request with stream id: #{stream_id} from address: #{address}")
+    Logger.info(
+      "Receiving new connection request with stream id: #{stream_id} from address: #{address}"
+    )
 
     :ok = ExLibSRT.Server.accept_awaiting_connect_request(state.server)
 
@@ -64,14 +65,10 @@ receive do
 end
 
 # Process.sleep(2_000)
-#
 for _i <- 1..10_000 do
   payload = :crypto.strong_rand_bytes(1200)
-
   :ok = ExLibSRT.Client.send_data(payload, client)
 end
-
-
 
 Process.sleep(5000)
 
@@ -80,4 +77,3 @@ ExLibSRT.Client.stop(client)
 Process.sleep(1000)
 
 GenServer.stop(server)
-
