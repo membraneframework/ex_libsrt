@@ -37,4 +37,5 @@ defmodule ExLibSRTBundlexProject do
       _other ->
         nil
     end
+  end
 end
