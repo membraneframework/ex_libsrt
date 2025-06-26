@@ -60,7 +60,7 @@ defmodule ExLibSRT.Server do
   def start_link(address, port) do
     case ExLibSRT.Native.start_server(address, port) do
       {:ok, server_ref} ->
-        Agent.start_link(fn -> server_ref end, name: {:global, server_ref})
+        Agent.start_link(fn -> server_ref end)
 
       {:error, reason, error_code} ->
         {:error, reason, error_code}

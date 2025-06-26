@@ -24,14 +24,14 @@ defmodule ExLibSRT.Client do
   @type srt_client_error :: {:srt_client_error, reason :: String.t()}
 
   @doc """
-  Starts a new SRT connection to the target address and port and link to the current process.
+  Starts a new SRT connection to the target address and port and links to the current process.
   """
   @spec start_link(address :: String.t(), port :: non_neg_integer(), stream_id :: String.t()) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
   def start_link(address, port, stream_id) do
     case ExLibSRT.Native.start_client(address, port, stream_id) do
       {:ok, client_ref} ->
-        Agent.start_link(fn -> client_ref end, name: {:global, client_ref})
+        Agent.start_link(fn -> client_ref end)
 
       {:error, reason, error_code} ->
         {:error, reason, error_code}
