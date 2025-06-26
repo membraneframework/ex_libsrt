@@ -17,7 +17,7 @@ defmodule ExLibSRT.Server do
   * `t:srt_server_conn_closed/0` - a client connection has been closed
   * `t:srt_server_error/0` - server has encountered an error
   * `t:srt_data/0` - server has received new data on a client connection
-  * `t:srt_server_connect_request/0` - server has triggered a new connection request 
+  * `t:srt_server_connect_request/0` - server has triggered a new connection request
     (see `accept_awaiting_connect_request/1` and `reject_awaiting_connect_request/1` for answering the request)
 
   ### Accepting connections
@@ -33,11 +33,13 @@ defmodule ExLibSRT.Server do
   > #### Response timeout {: .warning}
   >
   > It is very important to answer the connection request as fast as possible.
-  > Due to how `libsrt` works, while the server waits for the response it blocks the receiving thread 
+  > Due to how `libsrt` works, while the server waits for the response it blocks the receiving thread
   > and potentially interrupts other ongoing connections.
   """
 
-  @type t :: reference()
+  use Agent
+
+  @type t :: pid()
 
   @type connection_id :: non_neg_integer()
 
@@ -49,14 +51,37 @@ defmodule ExLibSRT.Server do
           {:srt_server_connect_request, address :: String.t(), stream_id :: String.t()}
 
   @doc """
-  Starts a new SRT server binding to given address and port.
+  Starts a new SRT server binding to given address and port and links to current process.
+
+  One may usually want to bind to `0.0.0.0` address.
+  """
+  @spec start_link(address :: String.t(), port :: non_neg_integer()) ::
+          {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
+  def start_link(address, port) do
+    case ExLibSRT.Native.start_server(address, port) do
+      {:ok, server_ref} ->
+        Agent.start_link(fn -> server_ref end, name: {:global, server_ref})
+
+      {:error, reason, error_code} ->
+        {:error, reason, error_code}
+    end
+  end
+
+  @doc """
+  Starts a new SRT server outside the supervision tree, binding to given address and port.
 
   One may usually want to bind to `0.0.0.0` address.
   """
   @spec start(address :: String.t(), port :: non_neg_integer()) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
   def start(address, port) do
-    ExLibSRT.Native.start_server(address, port)
+    case ExLibSRT.Native.start_server(address, port) do
+      {:ok, server_ref} ->
+        Agent.start(fn -> server_ref end, name: {:global, server_ref})
+
+      {:error, reason, error_code} ->
+        {:error, reason, error_code}
+    end
   end
 
   @doc """
@@ -65,25 +90,31 @@ defmodule ExLibSRT.Server do
   Stopping a server should gracefuly close all the client connections.
   """
   @spec stop(t()) :: :ok
-  def stop(server) do
-    ExLibSRT.Native.stop_server(server)
+  def stop(agent) do
+    server_ref = Agent.get(agent, & &1)
+    ExLibSRT.Native.stop_server(server_ref)
+    Agent.stop(agent)
   end
 
   @doc """
   Acccepts the currently awaiting connection request.
   """
   @spec accept_awaiting_connect_request(t()) :: :ok | {:error, reason :: String.t()}
-  def accept_awaiting_connect_request(server),
-    do: ExLibSRT.Native.accept_awaiting_connect_request(self(), server)
+  def accept_awaiting_connect_request(agent) do
+    server_ref = Agent.get(agent, & &1)
+    ExLibSRT.Native.accept_awaiting_connect_request(self(), server_ref)
+  end
 
   @doc """
   Acccepts the currently awaiting connection request and starts a separate connection process
   """
   @spec accept_awaiting_connect_request_with_handler(ExLibSRT.Connection.Handler.t(), t()) ::
           {:ok, ExLibSRT.Connection.t()} | {:error, reason :: any()}
-  def accept_awaiting_connect_request_with_handler(handler, server) do
+  def accept_awaiting_connect_request_with_handler(handler, agent) do
+    server_ref = Agent.get(agent, & &1)
+
     with {:ok, handler} <- ExLibSRT.Connection.start(handler) do
-      case ExLibSRT.Native.accept_awaiting_connect_request(handler, server) do
+      case ExLibSRT.Native.accept_awaiting_connect_request(handler, server_ref) do
         :ok ->
           {:ok, handler}
 
@@ -99,21 +130,27 @@ defmodule ExLibSRT.Server do
   Rejects the currently awaiting connection request.
   """
   @spec reject_awaiting_connect_request(t()) :: :ok | {:error, reason :: String.t()}
-  def reject_awaiting_connect_request(server),
-    do: ExLibSRT.Native.reject_awaiting_connect_request(server)
+  def reject_awaiting_connect_request(agent) do
+    server_ref = Agent.get(agent, & &1)
+    ExLibSRT.Native.reject_awaiting_connect_request(server_ref)
+  end
 
   @doc """
   Closes the connection to the given client.
   """
   @spec close_server_connection(connection_id(), t()) :: :ok | {:error, reason :: String.t()}
-  def close_server_connection(connection_id, server),
-    do: ExLibSRT.Native.close_server_connection(connection_id, server)
+  def close_server_connection(connection_id, agent) do
+    server_ref = Agent.get(agent, & &1)
+    ExLibSRT.Native.close_server_connection(connection_id, server_ref)
+  end
 
   @doc """
   Reads socket statistics.
   """
   @spec read_socket_stats(connection_id(), t()) ::
           {:ok, ExLibSRT.SocketStats.t()} | {:error, reason :: String.t()}
-  def read_socket_stats(connection_id, server),
-    do: ExLibSRT.Native.read_server_socket_stats(connection_id, server)
+  def read_socket_stats(connection_id, agent) do
+    server_ref = Agent.get(agent, & &1)
+    ExLibSRT.Native.read_server_socket_stats(connection_id, server_ref)
+  end
 end
