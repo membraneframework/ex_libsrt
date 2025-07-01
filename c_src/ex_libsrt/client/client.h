@@ -5,6 +5,7 @@
 #include <srt/srt.h>
 #include <thread>
 #include "../common/srt_socket_stats.h"
+#include <functional>
 
 class Client {
 public:

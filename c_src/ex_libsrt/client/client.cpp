@@ -112,6 +112,8 @@ void Client::Stop() {
 
     epoll = -1;
   }
+
+  sleep(1); // workaround to make sure all the packets are sent, as shown here: https://github.com/Haivision/srt/blob/952f9495246abc201bac55b8f9ad7409c0572423/examples/test-c-client.c#L94
   if (srt_sock != -1) {
     srt_close(srt_sock);
 
