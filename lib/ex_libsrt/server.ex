@@ -6,11 +6,20 @@ defmodule ExLibSRT.Server do
   The client API consinsts of the following functions:
 
   * `start/2` - starts the server
+  * `start/3` - starts the server with password authentication
+  * `start_link/2` - starts the server and links to current process
+  * `start_link/3` - starts the server with password authentication and links to current process
   * `stop/1` - stops the server
   * `accept_awaiting_connect_request/1` - accepts next incoming connection
   * `reject_awaiting_connect_request/1` - rejects next incoming connection
   * `close_server_connection/2` - stops server's connection to given client
 
+  ## Password Authentication
+
+  SRT supports password-based authentication. When using password authentication:
+  - Password must be between 10 and 79 characters long (SRT specification requirement)
+  - Empty string means no password authentication (default behavior)
+  - All connecting clients must provide the same password
 
   A process starting the server will also receive the following notifications:
   * `t:srt_server_conn/0` - a new client connection has been established
@@ -54,16 +63,23 @@ defmodule ExLibSRT.Server do
   Starts a new SRT server binding to given address and port and links to current process.
 
   One may usually want to bind to `0.0.0.0` address.
+
+  ## Password Requirements
+
+  If a password is provided, it must be between 10 and 79 characters long according to SRT specification.
+  An empty string means no password authentication will be used.
   """
   @spec start_link(address :: String.t(), port :: non_neg_integer()) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
-  def start_link(address, port) do
-    case ExLibSRT.Native.start_server(address, port) do
-      {:ok, server_ref} ->
-        Agent.start_link(fn -> server_ref end)
-
-      {:error, reason, error_code} ->
-        {:error, reason, error_code}
+  @spec start_link(address :: String.t(), port :: non_neg_integer(), password :: String.t()) ::
+          {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
+  def start_link(address, port, password \\ "") do
+    with :ok <- validate_password(password),
+         {:ok, server_ref} <- ExLibSRT.Native.start_server(address, port, password) do
+      Agent.start_link(fn -> server_ref end)
+    else
+      {:error, reason, error_code} -> {:error, reason, error_code}
+      {:error, reason} -> {:error, reason, 0}
     end
   end
 
@@ -71,16 +87,23 @@ defmodule ExLibSRT.Server do
   Starts a new SRT server outside the supervision tree, binding to given address and port.
 
   One may usually want to bind to `0.0.0.0` address.
+
+  ## Password Requirements
+
+  If a password is provided, it must be between 10 and 79 characters long according to SRT specification.
+  An empty string means no password authentication will be used.
   """
   @spec start(address :: String.t(), port :: non_neg_integer()) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
-  def start(address, port) do
-    case ExLibSRT.Native.start_server(address, port) do
-      {:ok, server_ref} ->
-        Agent.start(fn -> server_ref end, name: {:global, server_ref})
-
-      {:error, reason, error_code} ->
-        {:error, reason, error_code}
+  @spec start(address :: String.t(), port :: non_neg_integer(), password :: String.t()) ::
+          {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
+  def start(address, port, password \\ "") do
+    with :ok <- validate_password(password),
+         {:ok, server_ref} <- ExLibSRT.Native.start_server(address, port, password) do
+      Agent.start(fn -> server_ref end, name: {:global, server_ref})
+    else
+      {:error, reason, error_code} -> {:error, reason, error_code}
+      {:error, reason} -> {:error, reason, 0}
     end
   end
 
@@ -101,8 +124,12 @@ defmodule ExLibSRT.Server do
   """
   @spec accept_awaiting_connect_request(t()) :: :ok | {:error, reason :: String.t()}
   def accept_awaiting_connect_request(agent) do
-    server_ref = Agent.get(agent, & &1)
-    ExLibSRT.Native.accept_awaiting_connect_request(self(), server_ref)
+    if Process.alive?(agent) do
+      server_ref = Agent.get(agent, & &1)
+      ExLibSRT.Native.accept_awaiting_connect_request(self(), server_ref)
+    else
+      {:error, "Server is not active"}
+    end
   end
 
   @doc """
@@ -111,18 +138,18 @@ defmodule ExLibSRT.Server do
   @spec accept_awaiting_connect_request_with_handler(ExLibSRT.Connection.Handler.t(), t()) ::
           {:ok, ExLibSRT.Connection.t()} | {:error, reason :: any()}
   def accept_awaiting_connect_request_with_handler(handler, agent) do
-    server_ref = Agent.get(agent, & &1)
+    with true <- Process.alive?(agent),
+         server_ref = Agent.get(agent, & &1),
+         {:ok, handler} <- ExLibSRT.Connection.start(handler),
+         :ok <- ExLibSRT.Native.accept_awaiting_connect_request(handler, server_ref) do
+      {:ok, handler}
+    else
+      false ->
+        {:error, "Server is not active"}
 
-    with {:ok, handler} <- ExLibSRT.Connection.start(handler) do
-      case ExLibSRT.Native.accept_awaiting_connect_request(handler, server_ref) do
-        :ok ->
-          {:ok, handler}
-
-        {:error, _reason} = error ->
-          ExLibSRT.Connection.stop(handler)
-
-          error
-      end
+      {:error, _reason} = error ->
+        ExLibSRT.Connection.stop(handler)
+        error
     end
   end
 
@@ -131,8 +158,12 @@ defmodule ExLibSRT.Server do
   """
   @spec reject_awaiting_connect_request(t()) :: :ok | {:error, reason :: String.t()}
   def reject_awaiting_connect_request(agent) do
-    server_ref = Agent.get(agent, & &1)
-    ExLibSRT.Native.reject_awaiting_connect_request(server_ref)
+    if Process.alive?(agent) do
+      server_ref = Agent.get(agent, & &1)
+      ExLibSRT.Native.reject_awaiting_connect_request(server_ref)
+    else
+      {:error, "Server is not active"}
+    end
   end
 
   @doc """
@@ -140,8 +171,12 @@ defmodule ExLibSRT.Server do
   """
   @spec close_server_connection(connection_id(), t()) :: :ok | {:error, reason :: String.t()}
   def close_server_connection(connection_id, agent) do
-    server_ref = Agent.get(agent, & &1)
-    ExLibSRT.Native.close_server_connection(connection_id, server_ref)
+    if Process.alive?(agent) do
+      server_ref = Agent.get(agent, & &1)
+      ExLibSRT.Native.close_server_connection(connection_id, server_ref)
+    else
+      {:error, "Server is not active"}
+    end
   end
 
   @doc """
@@ -150,7 +185,33 @@ defmodule ExLibSRT.Server do
   @spec read_socket_stats(connection_id(), t()) ::
           {:ok, ExLibSRT.SocketStats.t()} | {:error, reason :: String.t()}
   def read_socket_stats(connection_id, agent) do
-    server_ref = Agent.get(agent, & &1)
-    ExLibSRT.Native.read_server_socket_stats(connection_id, server_ref)
+    if Process.alive?(agent) do
+      server_ref = Agent.get(agent, & &1)
+      ExLibSRT.Native.read_server_socket_stats(connection_id, server_ref)
+    else
+      {:error, "Server is not active"}
+    end
   end
+
+  # Private functions
+
+  @spec validate_password(String.t()) :: :ok | {:error, String.t()}
+  defp validate_password(""), do: :ok
+
+  defp validate_password(password) when is_binary(password) do
+    password_length = String.length(password)
+
+    cond do
+      password_length < 10 ->
+        {:error, "SRT password must be at least 10 characters long"}
+
+      password_length > 79 ->
+        {:error, "SRT password must be at most 79 characters long"}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp validate_password(_), do: {:error, "Password must be a string"}
 end

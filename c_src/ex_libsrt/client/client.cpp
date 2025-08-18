@@ -14,7 +14,9 @@ Client::~Client() {
   }
 }
 
-void Client::Run(const char* address, int port, const char* stream_id) {
+void Client::Run(const std::string& address, int port, const std::string& stream_id, const std::string& password) {
+  this->password = password;
+  
   srt_sock = srt_create_socket();
   if (srt_sock == SRT_ERROR) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
@@ -24,7 +26,7 @@ void Client::Run(const char* address, int port, const char* stream_id) {
   sa.sin_family = AF_INET;
   sa.sin_port = htons(port);
 
-  if (inet_pton(AF_INET, address, &sa.sin_addr) != 1) {
+  if (inet_pton(AF_INET, address.c_str(), &sa.sin_addr) != 1) {
     throw std::runtime_error("Failed to parse server address");
   }
 
@@ -39,10 +41,17 @@ void Client::Run(const char* address, int port, const char* stream_id) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
   }
 
-  if (strlen(stream_id) > 0) {
+  if (!stream_id.empty()) {
     if (srt_setsockflag(
-            srt_sock, SRTO_STREAMID, stream_id, strlen(stream_id)) ==
+            srt_sock, SRTO_STREAMID, stream_id.c_str(), stream_id.length()) ==
         SRT_ERROR) {
+      throw std::runtime_error(std::string(srt_getlasterror_str()));
+    }
+  }
+
+  // Set password if provided
+  if (!password.empty()) {
+    if (srt_setsockflag(srt_sock, SRTO_PASSPHRASE, password.c_str(), password.length()) == SRT_ERROR) {
       throw std::runtime_error(std::string(srt_getlasterror_str()));
     }
   }
