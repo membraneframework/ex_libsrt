@@ -170,6 +170,7 @@ defmodule ExLibSRT.ServerTest do
           :persistent_term.get(:srt_receiver)
         end
 
+        @impl true
         def handle_connected(conn_id, stream_id, receiver) do
           send(receiver, {:srt_handler_connected, conn_id, stream_id})
 

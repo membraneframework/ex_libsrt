@@ -41,7 +41,7 @@ defmodule ExLibSRT.Connection do
     GenServer.start(__MODULE__, handler, [])
   end
 
-  @spec stop(t()) :: GenServer.on_stop()
+  @spec stop(t()) :: :ok
   def stop(handler) do
     GenServer.stop(handler)
   end
