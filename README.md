@@ -1,8 +1,8 @@
 # ExLibSRT
 
-[![Hex.pm](https://img.shields.io/hexpm/v/ex_m3u8.svg)](https://hex.pm/packages/ex_libsrt)
+[![Hex.pm](https://img.shields.io/hexpm/v/ex_libsrt.svg)](https://hex.pm/packages/ex_libsrt)
 [![API Docs](https://img.shields.io/badge/api-docs-yellow.svg?style=flat)](https://hexdocs.pm/ex_libsrt/)
-[![CircleCI](https://circleci.com/gh/membraneframework/ex_m3u8.svg?style=svg)](https://circleci.com/gh/membraneframework/ex_libsrt)
+[![CircleCI](https://circleci.com/gh/membraneframework/ex_libsrt.svg?style=svg)](https://circleci.com/gh/membraneframework/ex_libsrt)
 
 Bindings for the [libsrt](https://github.com/Haivision/srt) library.
 
