@@ -26,7 +26,7 @@ public:
   Server() = default;
   ~Server() = default;
 
-  void Run(const char* address, int port);
+  void Run(const std::string& address, int port, const std::string& password = "");
 
   void Stop();
 
@@ -90,6 +90,7 @@ private:
 private:
   SrtSocket srt_sock;
   SrtSocket srt_bind_sock;
+  std::string password;
 
   std::atomic_bool running;
   SrtEpoll epoll;

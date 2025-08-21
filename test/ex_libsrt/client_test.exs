@@ -38,7 +38,7 @@ defmodule ExLibSRT.ClientTest do
 
     :ok = Client.stop(client)
 
-    {:error, "Client is not active"} = Client.send_data("test payload", client)
+    assert {:error, "Client is not active"} = Client.send_data("test payload", client)
   end
 
   test "get disconnected notification when servers closes", ctx do
@@ -74,6 +74,41 @@ defmodule ExLibSRT.ClientTest do
     assert {:ok, stats} = Client.read_socket_stats(client)
     assert stats.pktSent == 10
     assert stats.byteSentTotal > 1_000
+  end
+
+  # Password validation tests
+  describe "client password validation" do
+    test "rejects too short password" do
+      assert {:error, "SRT password must be at least 10 characters long", 0} =
+               Client.start_link("127.0.0.1", 8080, "stream1", "short")
+    end
+
+    test "rejects too long password" do
+      long_password = String.duplicate("a", 80)
+
+      assert {:error, "SRT password must be at most 79 characters long", 0} =
+               Client.start_link("127.0.0.1", 8080, "stream1", long_password)
+    end
+
+    test "accepts valid password length without server", _ctx do
+      # This will fail connection but password validation should pass
+      valid_password = "validpassword123"
+
+      assert {:error, "Stream rejected by server", -984} =
+               Client.start_link("127.0.0.1", 9999, "stream1", valid_password)
+    end
+
+    test "accepts empty password (no auth) without server", _ctx do
+      # This will fail connection but password validation should pass
+      assert {:error, "Stream rejected by server", -984} =
+               Client.start_link("127.0.0.1", 9999, "stream1", "")
+    end
+
+    test "accepts no password parameter (default) without server", _ctx do
+      # This will fail connection but should use default empty password
+      assert {:error, "Stream rejected by server", -984} =
+               Client.start_link("127.0.0.1", 9999, "stream1")
+    end
   end
 
   defp prepare_streaming(_ctx) do

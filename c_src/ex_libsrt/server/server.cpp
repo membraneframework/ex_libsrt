@@ -5,7 +5,9 @@
 #include <string>
 #include <unifex/unifex.h>
 
-void Server::Run(const char* address, int port) {
+void Server::Run(const std::string& address, int port, const std::string& password) {
+  this->password = password;
+  
   srt_sock = srt_create_socket();
   if (srt_sock == SRT_ERROR) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
@@ -14,7 +16,7 @@ void Server::Run(const char* address, int port) {
   struct sockaddr_in sa;
   sa.sin_family = AF_INET;
   sa.sin_port = htons(port);
-  if (inet_pton(AF_INET, address, &(sa).sin_addr) != 1) {
+  if (inet_pton(AF_INET, address.c_str(), &(sa).sin_addr) != 1) {
     throw std::runtime_error("Failed to parse server address");
   }
 
@@ -112,13 +114,11 @@ void Server::RunEpoll() {
       if (socket_state == SRTS_LISTENING) {
         AcceptConnection();
       } else if (socket_state == SRTS_BROKEN || socket_state == SRTS_CLOSED) {
-        printf("CLOSED %d\n", socket_state == SRTS_CLOSED);
-
         DisconnectSocket(sockets[i]);
       } else if (socket_state == SRTS_CONNECTED) {
         ReadSocketData(sockets[i]);
       } else {
-        printf("[WARNING] Encoutnered new socket state, report it to maintainers -> %d\n", socket_state);
+        printf("[WARNING] Encountered new socket state, report it to maintainers -> %d\n", socket_state);
       }
     }
 
@@ -167,6 +167,11 @@ int Server::OnNewConnection(SRTSOCKET ns,
     inet_ntop(AF_INET6, &(ipv6->sin6_addr), ip, INET6_ADDRSTRLEN);
 
     address = ip;
+  }
+
+  // Set password if provided
+  if (!password.empty()) {
+    srt_setsockflag(ns, SRTO_PASSPHRASE, password.c_str(), password.length());
   }
 
   std::unique_lock<std::mutex> lock(accept_mutex);

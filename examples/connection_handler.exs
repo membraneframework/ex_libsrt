@@ -1,4 +1,4 @@
-Mix.install([{:ex_libsrt, path: "../ex_libsrt"}])
+Mix.install([{:ex_libsrt, path: "../"}])
 
 
 defmodule ConnectionHandler do
@@ -6,9 +6,7 @@ defmodule ConnectionHandler do
 
   require Logger
 
-
   defstruct [:registry]
-
 
   @impl true
   def init(%__MODULE__{registry: registry}) do

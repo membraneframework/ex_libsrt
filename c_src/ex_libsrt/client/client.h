@@ -5,6 +5,7 @@
 #include <srt/srt.h>
 #include <thread>
 #include "../common/srt_socket_stats.h"
+#include <functional>
 
 class Client {
 public:
@@ -30,7 +31,7 @@ public:
 
   ~Client();
 
-  void Run(const char* address, int port, const char* stream_id);
+  void Run(const std::string& address, int port, const std::string& stream_id, const std::string& password = "");
   void Send(std::unique_ptr<char[]> data, int len);
   std::unique_ptr<SrtSocketStats> ReadSocketStats(bool clear_intervals);
   void Stop();
@@ -54,6 +55,7 @@ private:
 
 private:
   SrtSocket srt_sock = -1;
+  std::string password;
 
   std::atomic_bool running;
   SrtEpoll epoll = -1;
