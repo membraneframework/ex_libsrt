@@ -134,6 +134,7 @@ defmodule ExLibSRT.ServerTest do
       assert_receive {:srt_server_conn_closed, ^conn_id}, 1_000
     end
 
+    @tag :srt_tools_required
     test "read socket stats", ctx do
       _proxy =
         Transmit.start_streaming_proxy(
