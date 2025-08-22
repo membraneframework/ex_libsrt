@@ -19,6 +19,7 @@ end
 ```
 
 ## Example usage
+
 For examples of how to use the bindings, see `examples/` subdirectory.
 To see how to spawn a server listening on given port, how to connect
 client to that server and how to send data between the client and the server,
@@ -32,3 +33,11 @@ You can launch each of these scripts with the following sequence of commands:
 cd examples/
 elixir <script name>
 ```
+
+## Copyright and License
+
+Copyright 2025, [Software Mansion](https://swmansion.com/?utm_source=git&utm_medium=readme&utm_campaign=membrane_template_plugin)
+
+[![Software Mansion](https://logo.swmansion.com/logo?color=white&variant=desktop&width=200&tag=membrane-github)](https://swmansion.com/?utm_source=git&utm_medium=readme&utm_campaign=membrane_template_plugin)
+
+Licensed under the [Apache License, Version 2.0](LICENSE)
