@@ -6,6 +6,7 @@ defmodule ExLibSRT.ClientTest do
 
   setup :prepare_streaming
 
+  @tag :srt_tools_required
   test "connect to the server", ctx do
     _proxy = Transmit.start_receiving_proxy(ctx.srt_port, ctx.udp_port)
 
@@ -14,6 +15,7 @@ defmodule ExLibSRT.ClientTest do
     assert_receive :srt_client_connected
   end
 
+  @tag :srt_tools_required
   test "send data to a server", ctx do
     _proxy = Transmit.start_receiving_proxy(ctx.srt_port, ctx.udp_port)
     receiver = Transmit.start_stream_receiver(ctx.udp_port)
@@ -29,6 +31,7 @@ defmodule ExLibSRT.ClientTest do
     end
   end
 
+  @tag :srt_tools_required
   test "disconnect from the server", ctx do
     _proxy = Transmit.start_receiving_proxy(ctx.srt_port, ctx.udp_port)
 
@@ -41,6 +44,7 @@ defmodule ExLibSRT.ClientTest do
     assert {:error, "Client is not active"} = Client.send_data("test payload", client)
   end
 
+  @tag :srt_tools_required
   test "get disconnected notification when servers closes", ctx do
     proxy = Transmit.start_receiving_proxy(ctx.srt_port, ctx.udp_port)
 
@@ -55,6 +59,7 @@ defmodule ExLibSRT.ClientTest do
     assert {:error, "Client is not active"} = Client.send_data("some payload", client)
   end
 
+  @tag :srt_tools_required
   test "read socket stats", ctx do
     _proxy = Transmit.start_receiving_proxy(ctx.srt_port, ctx.udp_port)
     receiver = Transmit.start_stream_receiver(ctx.udp_port)
