@@ -23,7 +23,7 @@ defmodule ExLibSRT.SRTLiveTransmit do
        ]}
     ]
 
-    port = Port.open({:spawn_executable, System.find_executable("srt-live-transmit")}, args)
+    port = Port.open({:spawn_executable, find_executable("srt-live-transmit")}, args)
 
     wait_for_port(udp_port)
 
@@ -51,11 +51,25 @@ defmodule ExLibSRT.SRTLiveTransmit do
        ]}
     ]
 
-    port = Port.open({:spawn_executable, System.find_executable("srt-live-transmit")}, args)
+    port = Port.open({:spawn_executable, find_executable("srt-live-transmit")}, args)
 
     wait_for_port(udp_port)
 
     port
+  end
+
+  defp find_executable(executable_name) do
+    case System.find_executable(executable_name) do
+      nil ->
+        raise """
+        Couldn't find #{executable_name} in your system.
+        Make sure you have `srt-tools` in your system or
+        exclude tests that require it with `--exclude srt_tools_required`. 
+        """
+
+      executable ->
+        executable
+    end
   end
 
   @spec stop_proxy(streaming_proxy() | receiving_proxy()) :: :ok

@@ -149,5 +149,5 @@ defmodule ExLibSRT.Client do
     end
   end
 
-  defp validate_password(_), do: {:error, "Password must be a string"}
+  defp validate_password(_password), do: {:error, "Password must be a string"}
 end
