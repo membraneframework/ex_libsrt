@@ -7,6 +7,7 @@ defmodule ExLibSRT.ServerTest do
   describe "server" do
     setup :prepare_streaming
 
+    @tag :srt_tools_required
     test "accept a new connection", ctx do
       stream_id = "random_stream_id"
 
@@ -27,6 +28,7 @@ defmodule ExLibSRT.ServerTest do
       Transmit.stop_proxy(proxy)
     end
 
+    @tag :srt_tools_required
     test "decline the connection", ctx do
       stream_id = "forbidden_stream_id"
       _proxy = Transmit.start_streaming_proxy(ctx.udp_port, ctx.srt_port, stream_id)
@@ -39,6 +41,7 @@ defmodule ExLibSRT.ServerTest do
       refute_receive {:srt_server_conn, _conn_id, _stream_id}, 1_000
     end
 
+    @tag :srt_tools_required
     test "receive data over connection", ctx do
       proxy =
         Transmit.start_streaming_proxy(ctx.udp_port, ctx.srt_port, "data_stream_id")
@@ -66,6 +69,7 @@ defmodule ExLibSRT.ServerTest do
       Transmit.stop_proxy(proxy)
     end
 
+    @tag :srt_tools_required
     test "can handle multiple connections", ctx do
       streams =
         for udp_port <- ctx.udp_port..(ctx.udp_port + 10), into: %{} do
@@ -93,6 +97,7 @@ defmodule ExLibSRT.ServerTest do
       end
     end
 
+    @tag :srt_tools_required
     test "send closed connection notification", ctx do
       proxy =
         Transmit.start_streaming_proxy(
@@ -111,6 +116,7 @@ defmodule ExLibSRT.ServerTest do
       assert_receive {:srt_server_conn_closed, ^conn_id}, 2_000
     end
 
+    @tag :srt_tools_required
     test "close an ongoing connection", ctx do
       _proxy =
         Transmit.start_streaming_proxy(
@@ -159,6 +165,7 @@ defmodule ExLibSRT.ServerTest do
       assert {:error, "Socket not found"} = Server.read_socket_stats(2137, ctx.server)
     end
 
+    @tag :srt_tools_required
     test "starts a separate connection process", ctx do
       :persistent_term.put(:srt_receiver, self())
 
