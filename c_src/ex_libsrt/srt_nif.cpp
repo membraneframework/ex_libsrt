@@ -145,7 +145,7 @@ UNIFEX_TERM start_server(UnifexEnv* env, char* address, int port, char* password
     state->server->SetOnSocketData(
         [=](Server::SrtSocket socket, const char* data, int len) {
           UnifexPayload* payload =
-              (UnifexPayload*)unifex_alloc(sizeof(UnifexPayload*));
+              (UnifexPayload*)unifex_alloc(sizeof(UnifexPayload));
 
           unifex_payload_alloc(state->env, UNIFEX_PAYLOAD_BINARY, len, payload);
 

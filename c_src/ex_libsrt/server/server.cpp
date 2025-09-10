@@ -80,6 +80,10 @@ void Server::CloseConnection(int connection_id) {
 }
 
 void Server::RunEpoll() {
+  // Setting this one prevents spamming with "no sockets to check, this would deadlock" logs during closing
+  // of the system, when there are no sockets in the epoll anymore
+  srt_epoll_set(epoll, SRT_EPOLL_ENABLE_EMPTY);
+
   int sockets_len = 100;
   SrtSocket sockets[sockets_len];
 
