@@ -1,7 +1,7 @@
 defmodule ExLibSRT.MixProject do
   use Mix.Project
 
-  @version "0.1.2"
+  @version "0.1.3"
   @github_url "https://github.com/membraneframework/ex_libsrt"
 
   def project do
@@ -59,6 +59,7 @@ defmodule ExLibSRT.MixProject do
   defp deps do
     [
       {:unifex, "~> 1.2.0"},
+      {:membrane_precompiled_dependency_provider, "~> 0.2.0"},
       {:credo, "~> 1.4", only: :dev, runtime: false},
       {:dialyxir, "~> 1.1", only: :dev, runtime: false},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false}
