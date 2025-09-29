@@ -11,7 +11,7 @@ defmodule ExLibSRT.MixProject do
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
-      compilers: Mix.compilers() ++ [:unifex, :bundlex],
+      compilers: [:unifex, :bundlex] ++ Mix.compilers(),
       deps: deps(),
       # hex
       description: "SRT bindings for Elixir",
