@@ -53,7 +53,7 @@ defmodule ExLibSRT.Client do
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
   def start_link(address, port, stream_id, password \\ "") do
     with :ok <- validate_password(password),
-         {:ok, client_ref} <- ExLibSRT.Native.start_client(address, port, stream_id, password) do
+         {:ok, client_ref} <- ExLibSRT.Native.start_client(address, port, stream_id, password, -1) do
       Agent.start_link(fn -> client_ref end)
     else
       {:error, reason, error_code} -> {:error, reason, error_code}
@@ -80,7 +80,7 @@ defmodule ExLibSRT.Client do
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
   def start(address, port, stream_id, password \\ "") do
     with :ok <- validate_password(password),
-         {:ok, client_ref} <- ExLibSRT.Native.start_client(address, port, stream_id, password) do
+         {:ok, client_ref} <- ExLibSRT.Native.start_client(address, port, stream_id, password, -1) do
       Agent.start(fn -> client_ref end, name: {:global, client_ref})
     else
       {:error, reason, error_code} -> {:error, reason, error_code}
