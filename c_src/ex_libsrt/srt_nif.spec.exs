@@ -65,6 +65,8 @@ callback :unload, :on_unload
 
 spec start_server(host :: string, port :: int, password :: string) :: {:ok :: label, state} | {:error :: label, reason :: string}
 
+spec start_server_with_latency(host :: string, port :: int, password :: string, latency_ms :: int) :: {:ok :: label, state} | {:error :: label, reason :: string}
+
 spec accept_awaiting_connect_request(receiver :: pid, state) :: (:ok :: label) | {:error :: label, reason :: string}
 
 spec reject_awaiting_connect_request(state) :: (:ok :: label) | {:error :: label, reason :: string}
@@ -77,6 +79,8 @@ spec stop_server(state) :: (:ok :: label) | {:error :: label, reason :: string}
 
 
 spec start_client(server_address :: string, port :: int, stream_id :: string, password :: string) :: {:ok :: label, state} | {:error :: label, reason :: string, code :: int}
+
+spec start_client_with_latency(server_address :: string, port :: int, stream_id :: string, password :: string, latency_ms :: int) :: {:ok :: label, state} | {:error :: label, reason :: string, code :: int}
 
 spec send_client_data(data :: payload, state) :: (:ok :: label) | {:error :: label, reason :: string}
 
@@ -94,4 +98,4 @@ sends :srt_client_connected :: label
 sends :srt_client_disconnected :: label
 sends {:srt_client_error :: label, reason :: string}
 
-dirty :io,  start_server: 3, close_server_connection: 2, stop_server: 1, start_client: 4, read_server_socket_stats: 2, read_client_socket_stats: 1
+dirty :io,  start_server: 3, start_server_with_latency: 4, close_server_connection: 2, stop_server: 1, start_client: 4, start_client_with_latency: 5, read_server_socket_stats: 2, read_client_socket_stats: 1
