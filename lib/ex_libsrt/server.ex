@@ -9,6 +9,7 @@ defmodule ExLibSRT.Server do
   * `start/3` - starts the server with password authentication
   * `start_link/2` - starts the server and links to current process
   * `start_link/3` - starts the server with password authentication and links to current process
+  * `start_link/3` - starts the server with password authentication, sets SRT latency and links to current process
   * `stop/1` - stops the server
   * `accept_awaiting_connect_request/1` - accepts next incoming connection
   * `reject_awaiting_connect_request/1` - rejects next incoming connection
@@ -69,13 +70,16 @@ defmodule ExLibSRT.Server do
   If a password is provided, it must be between 10 and 79 characters long according to SRT specification.
   An empty string means no password authentication will be used.
   """
-  @spec start_link(address :: String.t(), port :: non_neg_integer()) ::
+  @spec start_link(
+          address :: String.t(),
+          port :: non_neg_integer(),
+          password :: String.t(),
+          latency_ms :: integer()
+        ) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
-  @spec start_link(address :: String.t(), port :: non_neg_integer(), password :: String.t()) ::
-          {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
-  def start_link(address, port, password \\ "") do
+  def start_link(address, port, password \\ "", latency_ms \\ -1) do
     with :ok <- validate_password(password),
-         {:ok, server_ref} <- ExLibSRT.Native.start_server(address, port, password, -1) do
+         {:ok, server_ref} <- ExLibSRT.Native.start_server(address, port, password, latency_ms) do
       Agent.start_link(fn -> server_ref end)
     else
       {:error, reason, error_code} -> {:error, reason, error_code}

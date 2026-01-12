@@ -9,6 +9,7 @@ defmodule ExLibSRT.Client do
   * `start/4` - starts a client connection to the server with password authentication
   * `start_link/3` - starts a client connection to the server and links to current process
   * `start_link/4` - starts a client connection to the server with password authentication and links to current process
+  * `start_link/5` - starts a client connection to the server with password authentication, sets SRT latency and links to current process
   * `stop/1` - stops the client connection
   * `send_data/2` - sends a packet through the client connection
 
@@ -42,18 +43,18 @@ defmodule ExLibSRT.Client do
   If a password is provided, it must be between 10 and 79 characters long according to SRT specification.
   An empty string means no password authentication will be used.
   """
-  @spec start_link(address :: String.t(), port :: non_neg_integer(), stream_id :: String.t()) ::
-          {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
   @spec start_link(
           address :: String.t(),
           port :: non_neg_integer(),
           stream_id :: String.t(),
-          password :: String.t()
+          password :: String.t(),
+          latency_ms :: integer()
         ) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
-  def start_link(address, port, stream_id, password \\ "") do
+  def start_link(address, port, stream_id, password \\ "", latency_ms \\ -1) do
     with :ok <- validate_password(password),
-         {:ok, client_ref} <- ExLibSRT.Native.start_client(address, port, stream_id, password, -1) do
+         {:ok, client_ref} <-
+           ExLibSRT.Native.start_client(address, port, stream_id, password, latency_ms) do
       Agent.start_link(fn -> client_ref end)
     else
       {:error, reason, error_code} -> {:error, reason, error_code}
