@@ -9,7 +9,7 @@ defmodule ExLibSRT.Server do
   * `start/3` - starts the server with password authentication
   * `start_link/2` - starts the server and links to current process
   * `start_link/3` - starts the server with password authentication and links to current process
-  * `start_link/3` - starts the server with password authentication, sets SRT latency and links to current process
+  * `start_link/4` - starts the server with password authentication, sets SRT latency and links to current process
   * `stop/1` - stops the server
   * `accept_awaiting_connect_request/1` - accepts next incoming connection
   * `reject_awaiting_connect_request/1` - rejects next incoming connection
