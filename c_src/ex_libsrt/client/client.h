@@ -31,7 +31,11 @@ public:
 
   ~Client();
 
-  void Run(const std::string& address, int port, const std::string& stream_id, const std::string& password = "");
+  void Run(const std::string& address,
+           int port,
+           const std::string& stream_id,
+           const std::string& password = "",
+           int latency_ms = -1);
   void Send(std::unique_ptr<char[]> data, int len);
   std::unique_ptr<SrtSocketStats> ReadSocketStats(bool clear_intervals);
   void Stop();

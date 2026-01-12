@@ -14,7 +14,11 @@ Client::~Client() {
   }
 }
 
-void Client::Run(const std::string& address, int port, const std::string& stream_id, const std::string& password) {
+void Client::Run(const std::string& address,
+                 int port,
+                 const std::string& stream_id,
+                 const std::string& password,
+                 int latency_ms) {
   this->password = password;
   
   srt_sock = srt_create_socket();
@@ -39,6 +43,12 @@ void Client::Run(const std::string& address, int port, const std::string& stream
 
   if (srt_setsockflag(srt_sock, SRTO_SNDSYN, &no, sizeof no) == SRT_ERROR) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
+  }
+
+  if (latency_ms >= 0) {
+    if (srt_setsockflag(srt_sock, SRTO_LATENCY, &latency_ms, sizeof latency_ms) == SRT_ERROR) {
+      throw std::runtime_error(std::string(srt_getlasterror_str()));
+    }
   }
 
   if (!stream_id.empty()) {

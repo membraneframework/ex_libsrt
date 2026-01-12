@@ -109,7 +109,11 @@ srt_socket_stats map_socket_stats(SrtSocketStats* stats) {
   return srt_stats;
 }
 
-UNIFEX_TERM start_server(UnifexEnv* env, char* address, int port, char* password) {
+UNIFEX_TERM start_server(UnifexEnv* env,
+                         char* address,
+                         int port,
+                         char* password,
+                         int latency_ms) {
   State* state = unifex_alloc_state(env);
   state = new (state) State();
 
@@ -170,7 +174,7 @@ UNIFEX_TERM start_server(UnifexEnv* env, char* address, int port, char* password
               state->env, state->owner, 1, address.c_str(), stream_id.c_str());
         });
 
-    state->server->Run(std::string(address), port, std::string(password));
+    state->server->Run(std::string(address), port, std::string(password), latency_ms);
 
     UNIFEX_TERM result = start_server_result_ok(env, state);
     unifex_release_state(env, state);
@@ -248,7 +252,12 @@ close_server_connection(UnifexEnv* env, int conn_id, UnifexState* state) {
 }
 
 UNIFEX_TERM
-start_client(UnifexEnv* env, char* server_address, int port, char* stream_id, char* password) {
+start_client(UnifexEnv* env,
+             char* server_address,
+             int port,
+             char* stream_id,
+             char* password,
+             int latency_ms) {
   State* state = unifex_alloc_state(env);
   state = new (state) State();
 
@@ -270,7 +279,11 @@ start_client(UnifexEnv* env, char* server_address, int port, char* stream_id, ch
       send_srt_client_error(state->env, state->owner, 1, reason.c_str());
     });
 
-    state->client->Run(std::string(server_address), port, std::string(stream_id), std::string(password));
+    state->client->Run(std::string(server_address),
+                       port,
+                       std::string(stream_id),
+                       std::string(password),
+                       latency_ms);
 
     UNIFEX_TERM result = start_client_result_ok(env, state);
     unifex_release_state(env, state);

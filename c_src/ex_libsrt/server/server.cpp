@@ -5,8 +5,12 @@
 #include <string>
 #include <unifex/unifex.h>
 
-void Server::Run(const std::string& address, int port, const std::string& password) {
+void Server::Run(const std::string& address,
+                 int port,
+                 const std::string& password,
+                 int latency_ms) {
   this->password = password;
+  this->latency_ms = latency_ms;
   
   srt_sock = srt_create_socket();
   if (srt_sock == SRT_ERROR) {
@@ -24,6 +28,11 @@ void Server::Run(const std::string& address, int port, const std::string& passwo
   int no = 0;
   srt_setsockflag(srt_sock, SRTO_RCVSYN, &no, sizeof yes);
   srt_setsockflag(srt_sock, SRTO_STREAMID, &yes, sizeof yes);
+  if (latency_ms >= 0) {
+    if (srt_setsockflag(srt_sock, SRTO_LATENCY, &latency_ms, sizeof latency_ms) == SRT_ERROR) {
+      throw std::runtime_error(std::string(srt_getlasterror_str()));
+    }
+  }
 
   srt_bind_sock = srt_bind(srt_sock, (struct sockaddr*)&(sa), sizeof sa);
   if (srt_bind_sock == SRT_ERROR) {
@@ -176,6 +185,9 @@ int Server::OnNewConnection(SRTSOCKET ns,
   // Set password if provided
   if (!password.empty()) {
     srt_setsockflag(ns, SRTO_PASSPHRASE, password.c_str(), password.length());
+  }
+  if (latency_ms >= 0) {
+    srt_setsockflag(ns, SRTO_LATENCY, &latency_ms, sizeof latency_ms);
   }
 
   std::unique_lock<std::mutex> lock(accept_mutex);
