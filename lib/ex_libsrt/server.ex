@@ -11,6 +11,7 @@ defmodule ExLibSRT.Server do
   * `start_link/3` - starts the server with password authentication and links to current process
   * `start_link/4` - starts the server with password authentication, sets SRT latency and links to current process
   * `stop/1` - stops the server
+  * `shutdown/1` - stops the server and closes all active connections
   * `accept_awaiting_connect_request/1` - accepts next incoming connection
   * `reject_awaiting_connect_request/1` - rejects next incoming connection
   * `close_server_connection/2` - stops server's connection to given client
@@ -121,6 +122,17 @@ defmodule ExLibSRT.Server do
     server_ref = Agent.get(agent, & &1)
     ExLibSRT.Native.stop_server(server_ref)
     Agent.stop(agent)
+  end
+
+  @doc """
+  Stops the server and closes all active connections.
+  """
+  @spec shutdown(t()) :: :ok | {:error, reason :: String.t()}
+  def shutdown(agent) do
+    server_ref = Agent.get(agent, & &1)
+    result = ExLibSRT.Native.shutdown_server(server_ref)
+    Agent.stop(agent)
+    result
   end
 
   @doc """

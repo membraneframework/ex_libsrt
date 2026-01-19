@@ -1,8 +1,28 @@
 #include "srt_nif.h"
 #include <cstdlib>
 #include <thread>
+#include <vector>
 
 #include <srt/srt.h>
+
+static void close_all_connections(State* state) {
+  if (state->server == nullptr) {
+    return;
+  }
+
+  std::vector<int> conn_ids;
+  {
+    std::shared_lock lock(state->conn_receivers_mutex);
+    conn_ids.reserve(state->conn_receivers.size());
+    for (const auto& entry : state->conn_receivers) {
+      conn_ids.push_back(entry.first);
+    }
+  }
+
+  for (const auto conn_id : conn_ids) {
+    state->server->CloseConnection(conn_id);
+  }
+}
 
 int on_load(UnifexEnv* env, void** priv_data) {
   UNIFEX_UNUSED(env);
@@ -234,6 +254,18 @@ UNIFEX_TERM stop_server(UnifexEnv* env, UnifexState* state) {
     state->server->Stop();
     state->server = nullptr;
   }
+
+  return stop_server_result_ok(env);
+}
+
+UNIFEX_TERM shutdown_server(UnifexEnv* env, UnifexState* state) {
+  if (state->server == nullptr) {
+    return stop_server_result_error(env, "Server is not active");
+  }
+
+  close_all_connections(state);
+  state->server->Stop();
+  state->server = nullptr;
 
   return stop_server_result_ok(env);
 }
