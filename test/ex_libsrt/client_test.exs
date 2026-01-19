@@ -8,19 +8,25 @@ defmodule ExLibSRT.ClientTest do
 
   @tag :srt_tools_required
   test "connect to the server", ctx do
-    _proxy = Transmit.start_receiving_proxy(ctx.srt_port, ctx.udp_port)
+    proxy = Transmit.start_receiving_proxy(ctx.srt_port, ctx.udp_port)
+    on_exit(fn -> stop_proxy_safe(proxy) end)
 
-    assert {:ok, _client} = Client.start("127.0.0.1", ctx.srt_port, "some_stream_id")
+    assert {:ok, client} = Client.start("127.0.0.1", ctx.srt_port, "some_stream_id")
+    on_exit(fn -> stop_client_safe(client) end)
 
     assert_receive :srt_client_connected
   end
 
   @tag :srt_tools_required
   test "send data to a server", ctx do
-    _proxy = Transmit.start_receiving_proxy(ctx.srt_port, ctx.udp_port)
+    proxy = Transmit.start_receiving_proxy(ctx.srt_port, ctx.udp_port)
+    on_exit(fn -> stop_proxy_safe(proxy) end)
+
     receiver = Transmit.start_stream_receiver(ctx.udp_port)
+    on_exit(fn -> close_stream_safe(receiver) end)
 
     assert {:ok, client} = Client.start("127.0.0.1", ctx.srt_port, "some_stream_id")
+    on_exit(fn -> stop_client_safe(client) end)
 
     assert_receive :srt_client_connected
 
@@ -33,9 +39,11 @@ defmodule ExLibSRT.ClientTest do
 
   @tag :srt_tools_required
   test "disconnect from the server", ctx do
-    _proxy = Transmit.start_receiving_proxy(ctx.srt_port, ctx.udp_port)
+    proxy = Transmit.start_receiving_proxy(ctx.srt_port, ctx.udp_port)
+    on_exit(fn -> stop_proxy_safe(proxy) end)
 
     assert {:ok, client} = Client.start("127.0.0.1", ctx.srt_port, "some_stream_id")
+    on_exit(fn -> stop_client_safe(client) end)
 
     assert_receive :srt_client_connected
 
@@ -47,8 +55,10 @@ defmodule ExLibSRT.ClientTest do
   @tag :srt_tools_required
   test "get disconnected notification when servers closes", ctx do
     proxy = Transmit.start_receiving_proxy(ctx.srt_port, ctx.udp_port)
+    on_exit(fn -> stop_proxy_safe(proxy) end)
 
     assert {:ok, client} = Client.start("127.0.0.1", ctx.srt_port, "some_stream_id")
+    on_exit(fn -> stop_client_safe(client) end)
 
     assert_receive :srt_client_connected
 
@@ -61,10 +71,14 @@ defmodule ExLibSRT.ClientTest do
 
   @tag :srt_tools_required
   test "read socket stats", ctx do
-    _proxy = Transmit.start_receiving_proxy(ctx.srt_port, ctx.udp_port)
+    proxy = Transmit.start_receiving_proxy(ctx.srt_port, ctx.udp_port)
+    on_exit(fn -> stop_proxy_safe(proxy) end)
+
     receiver = Transmit.start_stream_receiver(ctx.udp_port)
+    on_exit(fn -> close_stream_safe(receiver) end)
 
     assert {:ok, client} = Client.start("127.0.0.1", ctx.srt_port, "some_stream_id")
+    on_exit(fn -> stop_client_safe(client) end)
 
     assert_receive :srt_client_connected
 
@@ -121,5 +135,26 @@ defmodule ExLibSRT.ClientTest do
     srt_port = Enum.random(10_000..20_000)
 
     [udp_port: udp_port, srt_port: srt_port]
+  end
+
+  defp stop_client_safe(client) when is_pid(client) do
+    if Process.alive?(client) do
+      _ = Client.stop(client)
+    end
+  end
+
+  defp stop_client_safe(_client), do: :ok
+
+  defp stop_proxy_safe(proxy) do
+    case :erlang.port_info(proxy, :os_pid) do
+      {:os_pid, _os_pid} -> _ = Transmit.stop_proxy(proxy)
+      _ -> :ok
+    end
+  end
+
+  defp close_stream_safe(socket) do
+    if is_port(socket) and :erlang.port_info(socket) != nil do
+      _ = Transmit.close_stream(socket)
+    end
   end
 end
