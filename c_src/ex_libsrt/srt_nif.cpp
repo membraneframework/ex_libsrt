@@ -250,15 +250,6 @@ UNIFEX_TERM reject_awaiting_connect_request(UnifexEnv* env,
 
 
 UNIFEX_TERM stop_server(UnifexEnv* env, UnifexState* state) {
-  if (state->server) {
-    state->server->Stop();
-    state->server = nullptr;
-  }
-
-  return stop_server_result_ok(env);
-}
-
-UNIFEX_TERM shutdown_server(UnifexEnv* env, UnifexState* state) {
   if (state->server == nullptr) {
     return stop_server_result_error(env, "Server is not active");
   }
