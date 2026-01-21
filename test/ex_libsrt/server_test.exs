@@ -298,14 +298,14 @@ defmodule ExLibSRT.ServerTest do
 
   defp stop_proxy_safe(proxy) do
     case :erlang.port_info(proxy, :os_pid) do
-      {:os_pid, _os_pid} -> _ = Transmit.stop_proxy(proxy)
-      _ -> :ok
+      {:os_pid, _os_pid} -> Transmit.stop_proxy(proxy)
+      _other -> :ok
     end
   end
 
   defp close_stream_safe(socket) do
     if is_port(socket) and :erlang.port_info(socket) != nil do
-      _ = Transmit.close_stream(socket)
+      :ok = Transmit.close_stream(socket)
     end
   end
 end
