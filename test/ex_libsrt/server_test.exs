@@ -17,6 +17,7 @@ defmodule ExLibSRT.ServerTest do
           ctx.srt_port,
           stream_id
         )
+
       on_exit(fn -> stop_proxy_safe(proxy) end)
 
       assert_receive {:srt_server_connect_request, address, ^stream_id}, 2_000
@@ -47,6 +48,7 @@ defmodule ExLibSRT.ServerTest do
     test "receive data over connection", ctx do
       proxy =
         Transmit.start_streaming_proxy(ctx.udp_port, ctx.srt_port, "data_stream_id")
+
       on_exit(fn -> stop_proxy_safe(proxy) end)
 
       stream = Transmit.start_stream(ctx.udp_port)
@@ -111,6 +113,7 @@ defmodule ExLibSRT.ServerTest do
           ctx.srt_port,
           "closing_stream_id"
         )
+
       on_exit(fn -> stop_proxy_safe(proxy) end)
 
       assert_receive {:srt_server_connect_request, _address, _stream_id}, 2_000
@@ -130,6 +133,7 @@ defmodule ExLibSRT.ServerTest do
           ctx.udp_port,
           ctx.srt_port
         )
+
       on_exit(fn -> stop_proxy_safe(proxy) end)
 
       assert_receive {:srt_server_connect_request, _address, _stream_id}, 2_000
@@ -149,6 +153,7 @@ defmodule ExLibSRT.ServerTest do
           ctx.udp_port,
           ctx.srt_port
         )
+
       on_exit(fn -> stop_proxy_safe(proxy) end)
 
       assert_receive {:srt_server_connect_request, _address, _stream_id}, 2_000
@@ -212,6 +217,7 @@ defmodule ExLibSRT.ServerTest do
 
       proxy =
         Transmit.start_streaming_proxy(ctx.udp_port, ctx.srt_port, "data_stream_id")
+
       on_exit(fn -> stop_proxy_safe(proxy) end)
 
       stream = Transmit.start_stream(ctx.udp_port)

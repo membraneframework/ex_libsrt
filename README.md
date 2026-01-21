@@ -13,7 +13,7 @@ The package exposes a server and a client module to interact with SRT streams.
 ```elixir
 def deps do
   [
-    {:ex_libsrt, "~> 0.1.4"}
+    {:ex_libsrt, "~> 0.1.5"}
   ]
 end
 ```
