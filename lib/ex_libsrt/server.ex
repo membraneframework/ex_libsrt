@@ -114,13 +114,14 @@ defmodule ExLibSRT.Server do
   @doc """
   Stops the server.
 
-  Stopping a server should gracefuly close all the client connections.
+  Stopping a server closes all active connections.
   """
-  @spec stop(t()) :: :ok
+  @spec stop(t()) :: :ok | {:error, reason :: String.t()}
   def stop(agent) do
     server_ref = Agent.get(agent, & &1)
-    ExLibSRT.Native.stop_server(server_ref)
+    result = ExLibSRT.Native.stop_server(server_ref)
     Agent.stop(agent)
+    result
   end
 
   @doc """

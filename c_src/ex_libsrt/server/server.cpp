@@ -3,6 +3,7 @@
 #include <chrono>
 #include <exception>
 #include <string>
+#include <vector>
 #include <unifex/unifex.h>
 
 void Server::Run(const std::string& address,
@@ -94,19 +95,19 @@ void Server::RunEpoll() {
   srt_epoll_set(epoll, SRT_EPOLL_ENABLE_EMPTY);
 
   int sockets_len = 100;
-  SrtSocket sockets[sockets_len];
+  std::vector<SrtSocket> sockets(static_cast<size_t>(sockets_len));
 
   int broken_sockets_len = 100;
-  SrtSocket broken_sockets[broken_sockets_len];
+  std::vector<SrtSocket> broken_sockets(static_cast<size_t>(broken_sockets_len));
 
   while (running.load()) {
     sockets_len = 100;
     broken_sockets_len = 100;
 
     int n = srt_epoll_wait(epoll,
-                           &sockets[0],
+                           sockets.data(),
                            &sockets_len,
-                           &broken_sockets[0],
+                           broken_sockets.data(),
                            &broken_sockets_len,
                            1000,
                            0,

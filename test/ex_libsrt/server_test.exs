@@ -17,6 +17,7 @@ defmodule ExLibSRT.ServerTest do
           ctx.srt_port,
           stream_id
         )
+      on_exit(fn -> stop_proxy_safe(proxy) end)
 
       assert_receive {:srt_server_connect_request, address, ^stream_id}, 2_000
       assert address == "127.0.0.1"
@@ -31,7 +32,8 @@ defmodule ExLibSRT.ServerTest do
     @tag :srt_tools_required
     test "decline the connection", ctx do
       stream_id = "forbidden_stream_id"
-      _proxy = Transmit.start_streaming_proxy(ctx.udp_port, ctx.srt_port, stream_id)
+      proxy = Transmit.start_streaming_proxy(ctx.udp_port, ctx.srt_port, stream_id)
+      on_exit(fn -> stop_proxy_safe(proxy) end)
 
       assert_receive {:srt_server_connect_request, address, ^stream_id}, 2_000
       assert address == "127.0.0.1"
@@ -45,8 +47,10 @@ defmodule ExLibSRT.ServerTest do
     test "receive data over connection", ctx do
       proxy =
         Transmit.start_streaming_proxy(ctx.udp_port, ctx.srt_port, "data_stream_id")
+      on_exit(fn -> stop_proxy_safe(proxy) end)
 
       stream = Transmit.start_stream(ctx.udp_port)
+      on_exit(fn -> close_stream_safe(stream) end)
 
       assert_receive {:srt_server_connect_request, address, _stream_id}, 2_000
       assert address == "127.0.0.1"
@@ -74,6 +78,7 @@ defmodule ExLibSRT.ServerTest do
       streams =
         for udp_port <- ctx.udp_port..(ctx.udp_port + 10), into: %{} do
           proxy = Transmit.start_streaming_proxy(udp_port, ctx.srt_port, "stream_#{udp_port}")
+          on_exit(fn -> stop_proxy_safe(proxy) end)
 
           assert_receive {:srt_server_connect_request, _address, _stream_id}, 2_000
 
@@ -82,6 +87,7 @@ defmodule ExLibSRT.ServerTest do
           assert_receive {:srt_server_conn, conn_id, _stream_id}, 1_000
 
           stream = Transmit.start_stream(udp_port)
+          on_exit(fn -> close_stream_safe(stream) end)
 
           {conn_id, %{stream: stream, proxy: proxy}}
         end
@@ -105,6 +111,7 @@ defmodule ExLibSRT.ServerTest do
           ctx.srt_port,
           "closing_stream_id"
         )
+      on_exit(fn -> stop_proxy_safe(proxy) end)
 
       assert_receive {:srt_server_connect_request, _address, _stream_id}, 2_000
       :ok = Server.accept_awaiting_connect_request(ctx.server)
@@ -118,11 +125,12 @@ defmodule ExLibSRT.ServerTest do
 
     @tag :srt_tools_required
     test "close an ongoing connection", ctx do
-      _proxy =
+      proxy =
         Transmit.start_streaming_proxy(
           ctx.udp_port,
           ctx.srt_port
         )
+      on_exit(fn -> stop_proxy_safe(proxy) end)
 
       assert_receive {:srt_server_connect_request, _address, _stream_id}, 2_000
       :ok = Server.accept_awaiting_connect_request(ctx.server)
@@ -136,11 +144,12 @@ defmodule ExLibSRT.ServerTest do
 
     @tag :srt_tools_required
     test "read socket stats", ctx do
-      _proxy =
+      proxy =
         Transmit.start_streaming_proxy(
           ctx.udp_port,
           ctx.srt_port
         )
+      on_exit(fn -> stop_proxy_safe(proxy) end)
 
       assert_receive {:srt_server_connect_request, _address, _stream_id}, 2_000
       :ok = Server.accept_awaiting_connect_request(ctx.server)
@@ -148,6 +157,7 @@ defmodule ExLibSRT.ServerTest do
       assert_receive {:srt_server_conn, conn_id, _stream_id}, 1_000
 
       stream = Transmit.start_stream(ctx.udp_port)
+      on_exit(fn -> close_stream_safe(stream) end)
 
       payload = :crypto.strong_rand_bytes(100)
 
@@ -202,8 +212,10 @@ defmodule ExLibSRT.ServerTest do
 
       proxy =
         Transmit.start_streaming_proxy(ctx.udp_port, ctx.srt_port, "data_stream_id")
+      on_exit(fn -> stop_proxy_safe(proxy) end)
 
       stream = Transmit.start_stream(ctx.udp_port)
+      on_exit(fn -> close_stream_safe(stream) end)
 
       assert_receive {:srt_server_connect_request, address, _stream_id}, 2_000
       assert address == "127.0.0.1"
@@ -276,5 +288,18 @@ defmodule ExLibSRT.ServerTest do
     on_exit(fn -> Server.stop(server) end)
 
     [udp_port: udp_port, srt_port: srt_port, server: server]
+  end
+
+  defp stop_proxy_safe(proxy) do
+    case :erlang.port_info(proxy, :os_pid) do
+      {:os_pid, _os_pid} -> _ = Transmit.stop_proxy(proxy)
+      _ -> :ok
+    end
+  end
+
+  defp close_stream_safe(socket) do
+    if is_port(socket) and :erlang.port_info(socket) != nil do
+      _ = Transmit.close_stream(socket)
+    end
   end
 end
