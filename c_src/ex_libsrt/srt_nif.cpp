@@ -6,10 +6,6 @@
 #include <srt/srt.h>
 
 static void close_all_connections(State* state) {
-  if (state->server == nullptr) {
-    return;
-  }
-
   std::vector<int> conn_ids;
   {
     std::shared_lock lock(state->conn_receivers_mutex);
