@@ -53,7 +53,9 @@ void Client::Run(const std::string& address,
   int no = 0;
 
   if (af == AF_INET6) {
-    srt_setsockflag(srt_sock, SRTO_IPV6ONLY, &yes, sizeof yes);
+    if (srt_setsockflag(srt_sock, SRTO_IPV6ONLY, &yes, sizeof yes) == SRT_ERROR) {
+        throw std::runtime_error(std::string(srt_getlasterror_str()));
+    }
   }
 
   if (srt_setsockflag(srt_sock, SRTO_SENDER, &yes, sizeof yes) == SRT_ERROR) {
