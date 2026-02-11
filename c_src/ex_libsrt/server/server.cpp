@@ -36,13 +36,18 @@ void Server::Run(const std::string& address,
     throw std::runtime_error("Failed to parse server address: " + address);
   }
 
-  srt_sock = srt_socket(af, SOCK_DGRAM, 0);
+  srt_sock = srt_create_socket();
   if (srt_sock == SRT_ERROR) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
   }
 
   int yes = 1;
   int no = 0;
+
+  if (af == AF_INET6) {
+    srt_setsockflag(srt_sock, SRTO_IPV6ONLY, &yes, sizeof yes);
+  }
+
   srt_setsockflag(srt_sock, SRTO_RCVSYN, &no, sizeof yes);
   srt_setsockflag(srt_sock, SRTO_STREAMID, &yes, sizeof yes);
   if (latency_ms >= 0) {
