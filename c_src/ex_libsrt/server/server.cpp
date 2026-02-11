@@ -14,13 +14,9 @@ void Server::Run(const std::string& address,
   this->password = password;
   this->latency_ms = latency_ms;
 
-  srt_sock = srt_create_socket();
-  if (srt_sock == SRT_ERROR) {
-    throw std::runtime_error(std::string(srt_getlasterror_str()));
-  }
-
   struct sockaddr_storage ss;
   socklen_t ss_len;
+  int af;
   memset(&ss, 0, sizeof(ss));
 
   struct sockaddr_in6 *sa6 = reinterpret_cast<struct sockaddr_in6*>(&ss);
@@ -30,12 +26,19 @@ void Server::Run(const std::string& address,
     sa6->sin6_family = AF_INET6;
     sa6->sin6_port = htons(port);
     ss_len = sizeof(struct sockaddr_in6);
+    af = AF_INET6;
   } else if (inet_pton(AF_INET, address.c_str(), &sa4->sin_addr) == 1) {
     sa4->sin_family = AF_INET;
     sa4->sin_port = htons(port);
     ss_len = sizeof(struct sockaddr_in);
+    af = AF_INET;
   } else {
     throw std::runtime_error("Failed to parse server address: " + address);
+  }
+
+  srt_sock = srt_socket(af, SOCK_DGRAM, 0);
+  if (srt_sock == SRT_ERROR) {
+    throw std::runtime_error(std::string(srt_getlasterror_str()));
   }
 
   int yes = 1;
