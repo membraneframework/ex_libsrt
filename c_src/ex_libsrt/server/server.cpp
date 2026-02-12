@@ -1,6 +1,7 @@
 #include "server.h"
 
 #include <chrono>
+#include <cstring>
 #include <exception>
 #include <string>
 #include <vector>
@@ -12,21 +13,43 @@ void Server::Run(const std::string& address,
                  int latency_ms) {
   this->password = password;
   this->latency_ms = latency_ms;
-  
+
+  struct sockaddr_storage ss;
+  socklen_t ss_len;
+  int af;
+  memset(&ss, 0, sizeof(ss));
+
+  struct sockaddr_in6 *sa6 = reinterpret_cast<struct sockaddr_in6*>(&ss);
+  struct sockaddr_in  *sa4 = reinterpret_cast<struct sockaddr_in*>(&ss);
+
+  if (inet_pton(AF_INET6, address.c_str(), &sa6->sin6_addr) == 1) {
+    sa6->sin6_family = AF_INET6;
+    sa6->sin6_port = htons(port);
+    ss_len = sizeof(struct sockaddr_in6);
+    af = AF_INET6;
+  } else if (inet_pton(AF_INET, address.c_str(), &sa4->sin_addr) == 1) {
+    sa4->sin_family = AF_INET;
+    sa4->sin_port = htons(port);
+    ss_len = sizeof(struct sockaddr_in);
+    af = AF_INET;
+  } else {
+    throw std::runtime_error("Failed to parse server address: " + address);
+  }
+
   srt_sock = srt_create_socket();
   if (srt_sock == SRT_ERROR) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
   }
 
-  struct sockaddr_in sa;
-  sa.sin_family = AF_INET;
-  sa.sin_port = htons(port);
-  if (inet_pton(AF_INET, address.c_str(), &(sa).sin_addr) != 1) {
-    throw std::runtime_error("Failed to parse server address");
-  }
-
   int yes = 1;
   int no = 0;
+
+  if (af == AF_INET6) {
+    if (srt_setsockflag(srt_sock, SRTO_IPV6ONLY, &yes, sizeof yes) == SRT_ERROR) {
+        throw std::runtime_error(std::string(srt_getlasterror_str()));
+    }
+  }
+
   srt_setsockflag(srt_sock, SRTO_RCVSYN, &no, sizeof yes);
   srt_setsockflag(srt_sock, SRTO_STREAMID, &yes, sizeof yes);
   if (latency_ms >= 0) {
@@ -35,7 +58,7 @@ void Server::Run(const std::string& address,
     }
   }
 
-  srt_bind_sock = srt_bind(srt_sock, (struct sockaddr*)&(sa), sizeof sa);
+  srt_bind_sock = srt_bind(srt_sock, reinterpret_cast<struct sockaddr*>(&ss), ss_len);
   if (srt_bind_sock == SRT_ERROR) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
   }
