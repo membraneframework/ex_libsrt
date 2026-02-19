@@ -28,6 +28,8 @@ see: `simple_client_connection.exs`.
 To see how to handle multiple client connections with a single server using 
 `ExLibSRT.Connection.Handler`, see: `connection_handler.exs`.
 
+To send payloads from server to a connected client, use `ExLibSRT.Server.send_data/3`.
+
 You can launch each of these scripts with the following sequence of commands:
 ```
 cd examples/

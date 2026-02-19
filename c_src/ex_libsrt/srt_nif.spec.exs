@@ -73,6 +73,8 @@ spec read_server_socket_stats(conn_id :: int, state) :: {:ok :: label, stats :: 
 
 spec close_server_connection(conn_id :: int, state) :: (:ok :: label) | {:error :: label, reason :: string}
 
+spec send_server_data(conn_id :: int, data :: payload, state) :: (:ok :: label) | {:error :: label, reason :: string}
+
 spec stop_server(state) :: (:ok :: label) | {:error :: label, reason :: string}
 
 
@@ -94,4 +96,4 @@ sends :srt_client_connected :: label
 sends :srt_client_disconnected :: label
 sends {:srt_client_error :: label, reason :: string}
 
-dirty :io,  start_server: 4, close_server_connection: 2, stop_server: 1, start_client: 5, read_server_socket_stats: 2, read_client_socket_stats: 1
+dirty :io,  start_server: 4, close_server_connection: 2, send_server_data: 3, stop_server: 1, start_client: 5, read_server_socket_stats: 2, read_client_socket_stats: 1

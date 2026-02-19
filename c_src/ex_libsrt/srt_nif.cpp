@@ -271,6 +271,39 @@ close_server_connection(UnifexEnv* env, int conn_id, UnifexState* state) {
 }
 
 UNIFEX_TERM
+send_server_data(UnifexEnv* env,
+                 int conn_id,
+                 UnifexPayload* payload,
+                 UnifexState* state) {
+  if (state->server == nullptr) {
+    return send_server_data_result_error(env, "Server is not active");
+  }
+
+  {
+    std::shared_lock lock(state->conn_receivers_mutex);
+
+    if (state->conn_receivers.find(conn_id) == std::end(state->conn_receivers)) {
+      return send_server_data_result_error(env, "Socket not found");
+    }
+  }
+
+  auto result =
+      srt_sendmsg(conn_id, reinterpret_cast<const char*>(payload->data), payload->size, -1, 0);
+
+  if (result == SRT_ERROR) {
+    auto socket_state = srt_getsockstate(conn_id);
+
+    if (socket_state == SRTS_CLOSED || socket_state == SRTS_BROKEN) {
+      return send_server_data_result_error(env, "Socket is closed or broken");
+    }
+
+    return send_server_data_result_error(env, srt_getlasterror_str());
+  }
+
+  return send_server_data_result_ok(env);
+}
+
+UNIFEX_TERM
 start_client(UnifexEnv* env,
              char* server_address,
              int port,

@@ -14,6 +14,7 @@ defmodule ExLibSRT.Server do
   * `accept_awaiting_connect_request/1` - accepts next incoming connection
   * `reject_awaiting_connect_request/1` - rejects next incoming connection
   * `close_server_connection/2` - stops server's connection to given client
+  * `send_data/3` - sends a packet through a server connection
 
   ## Password Authentication
 
@@ -48,6 +49,8 @@ defmodule ExLibSRT.Server do
   """
 
   use Agent
+
+  @max_payload_size 1316
 
   @type t :: pid()
 
@@ -179,6 +182,25 @@ defmodule ExLibSRT.Server do
     if Process.alive?(agent) do
       server_ref = Agent.get(agent, & &1)
       ExLibSRT.Native.close_server_connection(connection_id, server_ref)
+    else
+      {:error, "Server is not active"}
+    end
+  end
+
+  @doc """
+  Sends data through a server connection.
+  """
+  @spec send_data(connection_id(), binary(), t()) ::
+          :ok | {:error, :payload_too_large | (reason :: String.t())}
+  def send_data(connection_id, payload, agent)
+
+  def send_data(_connection_id, payload, _agent) when byte_size(payload) > @max_payload_size,
+    do: {:error, :payload_too_large}
+
+  def send_data(connection_id, payload, agent) do
+    if Process.alive?(agent) do
+      server_ref = Agent.get(agent, & &1)
+      ExLibSRT.Native.send_server_data(connection_id, payload, server_ref)
     else
       {:error, "Server is not active"}
     end
