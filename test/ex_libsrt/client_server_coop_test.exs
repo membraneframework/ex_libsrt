@@ -68,18 +68,17 @@ defmodule ExLibSRT.ClientServerCoopTest do
 
     assert_receive :server_running, 1_000
 
-    assert {:ok, client_ref} =
-             ExLibSRT.Native.start_client_with_mode(
-               "127.0.0.1",
-               ctx.srt_port,
-               "some_stream_id",
-               "",
-               -1,
-               0
-             )
+    assert {:ok, client} =
+             Client.start("127.0.0.1", ctx.srt_port, "some_stream_id", mode: :receiver)
 
     on_exit(fn ->
-      _ = ExLibSRT.Native.stop_client(client_ref)
+      _ =
+        try do
+          Client.stop(client)
+        catch
+          :exit, _reason -> :ok
+        end
+
       :ok
     end)
 
@@ -89,8 +88,7 @@ defmodule ExLibSRT.ClientServerCoopTest do
     assert :ok = Server.send_data(conn_id, "hello", server)
     assert_receive {:srt_data, 0, "hello"}, 5_000
 
-    assert {:error, "Client is not in sender mode"} =
-             ExLibSRT.Native.send_client_data("hello", client_ref)
+    assert {:error, "Client is not in sender mode"} = Client.send_data("hello", client)
 
     send(server_task, :stop_server)
     assert_receive :server_stopped, 2_000
