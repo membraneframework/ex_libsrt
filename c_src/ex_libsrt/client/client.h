@@ -26,8 +26,8 @@ public:
   };
     
 
-  Client(int max_pending_messages, int send_ttl)
-      : max_pending_messages(max_pending_messages), send_ttl(send_ttl) {}
+  Client(int max_pending_messages, int send_ttl, bool sender_mode = true)
+      : max_pending_messages(max_pending_messages), send_ttl(send_ttl), sender_mode(sender_mode) {}
 
   ~Client();
 
@@ -53,6 +53,10 @@ public:
     this->on_socket_disconnected = std::move(on_socket_disconnected);
   }
 
+  void SetOnSocketData(std::function<void(const char*, int)>&& on_socket_data) {
+    this->on_socket_data = std::move(on_socket_data);
+  }
+
 private:
   void RunEpoll();
   void SendFromQueue();
@@ -70,10 +74,12 @@ private:
   std::function<void(const std::string&)> on_socket_error;
   std::function<void()> on_socket_connected;
   std::function<void()> on_socket_disconnected;
+  std::function<void(const char*, int)> on_socket_data;
 
 private:
   const int max_pending_messages;
   const int send_ttl;
+  const bool sender_mode;
 
   std::mutex send_mutex;
   std::condition_variable send_cv;

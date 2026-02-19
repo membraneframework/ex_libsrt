@@ -58,12 +58,19 @@ void Client::Run(const std::string& address,
     }
   }
 
-  if (srt_setsockflag(srt_sock, SRTO_SENDER, &yes, sizeof yes) == SRT_ERROR) {
+  int sender = sender_mode ? 1 : 0;
+  if (srt_setsockflag(srt_sock, SRTO_SENDER, &sender, sizeof sender) == SRT_ERROR) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
   }
 
   if (srt_setsockflag(srt_sock, SRTO_SNDSYN, &no, sizeof no) == SRT_ERROR) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
+  }
+
+  if (!sender_mode) {
+    if (srt_setsockflag(srt_sock, SRTO_RCVSYN, &no, sizeof no) == SRT_ERROR) {
+      throw std::runtime_error(std::string(srt_getlasterror_str()));
+    }
   }
 
   if (latency_ms >= 0) {
@@ -92,9 +99,13 @@ void Client::Run(const std::string& address,
     throw std::runtime_error(std::string(srt_getlasterror_str()));
   }
 
-  const int write_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+  int poll_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
 
-  if (srt_epoll_add_usock(epoll, srt_sock, &write_modes) == SRT_ERROR) {
+  if (!sender_mode) {
+    poll_modes |= SRT_EPOLL_IN;
+  }
+
+  if (srt_epoll_add_usock(epoll, srt_sock, &poll_modes) == SRT_ERROR) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
   }
 
@@ -110,6 +121,10 @@ void Client::Run(const std::string& address,
 }
 
 void Client::Send(std::unique_ptr<char[]> data, int len) {
+  if (!sender_mode) {
+    throw std::runtime_error("Client is not in sender mode");
+  }
+
   if (running.load()) {
     auto lock = std::unique_lock(send_mutex);
     send_cv.wait(lock,
@@ -164,16 +179,16 @@ void Client::Stop() {
 void Client::RunEpoll() {
   try {
     while (running.load()) {
-      int read_error_len = 1;
-      int read_out_len = 1;
-      SrtSocket read_error;
-      SrtSocket read_out;
+      int read_len = 1;
+      int write_len = 1;
+      SrtSocket read_socket;
+      SrtSocket write_socket;
 
       int n = srt_epoll_wait(epoll,
-                             &read_error,
-                             &read_error_len,
-                             &read_out,
-                             &read_out_len,
+                             &read_socket,
+                             &read_len,
+                             &write_socket,
+                             &write_len,
                              200,
                              0,
                              0,
@@ -183,7 +198,7 @@ void Client::RunEpoll() {
         continue;
       }
 
-      if (read_out_len > 0 && !connected) {
+      if (write_len > 0 && !connected) {
         connected = true;
 
         if (on_socket_connected) {
@@ -191,32 +206,50 @@ void Client::RunEpoll() {
         }
       }
 
-      if (read_error_len > 0 && !connected) {
-        int code = srt_getrejectreason(read_error);
-        auto reason = srt_rejectreason_str(code);
+      if (read_len > 0) {
+        auto socket_state = srt_getsockstate(read_socket);
 
-        throw std::runtime_error(reason);
-      }
-
-      if (read_error_len > 0) {
-        int posix_err;
-        auto code = srt_getlasterror(&posix_err);
-
-        if (code == 0) {
-          running.store(false);
-          send_cv.notify_all();
-
-          on_socket_disconnected();
-
-          return;
-        } else {
-          auto reason = srt_getlasterror_str();
+        if (!connected && socket_state == SRTS_BROKEN) {
+          int code = srt_getrejectreason(read_socket);
+          auto reason = srt_rejectreason_str(code);
 
           throw std::runtime_error(reason);
         }
+
+        if (socket_state == SRTS_CLOSED || socket_state == SRTS_BROKEN) {
+          running.store(false);
+          send_cv.notify_all();
+
+          if (connected && on_socket_disconnected) {
+            on_socket_disconnected();
+          }
+
+          return;
+        }
+
+        if (!sender_mode && socket_state == SRTS_CONNECTED) {
+          char buffer[1500];
+
+          int bytes_read = srt_recv(read_socket, buffer, sizeof(buffer));
+
+          if (bytes_read == 0 || bytes_read == SRT_ERROR) {
+            running.store(false);
+            send_cv.notify_all();
+
+            if (on_socket_disconnected) {
+              on_socket_disconnected();
+            }
+
+            return;
+          }
+
+          if (on_socket_data) {
+            on_socket_data(buffer, bytes_read);
+          }
+        }
       }
 
-      if (read_out_len > 0) {
+      if (sender_mode && write_len > 0) {
         auto lock = std::unique_lock(send_mutex);
 
         auto sendable = send_cv.wait_for(
