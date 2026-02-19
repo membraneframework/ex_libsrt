@@ -303,77 +303,13 @@ send_server_data(UnifexEnv* env,
   return send_server_data_result_ok(env);
 }
 
-UNIFEX_TERM
-start_client(UnifexEnv* env,
-             char* server_address,
-             int port,
-             char* stream_id,
-             char* password,
-             int latency_ms) {
-  State* state = unifex_alloc_state(env);
-  state = new (state) State();
-
-  try {
-    state->env = unifex_alloc_env(env);
-    if (!unifex_self(env, &state->owner)) {
-      throw new std::runtime_error("failed to create native state");
-    };
-
-    state->client = std::make_unique<Client>(10, 200, true);
-
-    state->client->SetOnSocketConnected(
-        [=]() { send_srt_client_connected(state->env, state->owner, 1); });
-
-    state->client->SetOnSocketDisconnected(
-        [=]() { send_srt_client_disconnected(state->env, state->owner, 1); });
-
-    state->client->SetOnSocketData([=](const char* data, int len) {
-      UnifexPayload* payload =
-          (UnifexPayload*)unifex_alloc(sizeof(UnifexPayload));
-
-      unifex_payload_alloc(state->env, UNIFEX_PAYLOAD_BINARY, len, payload);
-      memcpy(payload->data, data, len);
-
-      send_srt_data(state->env, state->owner, 1, 0, payload);
-
-      unifex_payload_release(payload);
-      unifex_free(payload);
-    });
-
-    state->client->SetOnSocketError([=](const std::string& reason) {
-      send_srt_client_error(state->env, state->owner, 1, reason.c_str());
-    });
-
-    state->client->Run(std::string(server_address),
-                       port,
-                       std::string(stream_id),
-                       std::string(password),
-                       latency_ms);
-
-    UNIFEX_TERM result = start_client_result_ok(env, state);
-    unifex_release_state(env, state);
-
-    return result;
-  } catch (const Client::StreamRejectedException& e) {
-    auto code = e.GetCode();
-
-    unifex_release_state(env, state);
-
-    return start_client_result_error(env, e.what(), code);
-  } catch (const std::exception& e) {
-    unifex_release_state(env, state);
-
-    return start_client_result_error(env, e.what(), -1);
-  }
-}
-
-UNIFEX_TERM start_client_with_mode(UnifexEnv* env,
-                                   char* server_address,
-                                   int port,
-                                   char* stream_id,
-                                   char* password,
-                                   int latency_ms,
-                                   int sender_mode) {
+UNIFEX_TERM start_client_native(UnifexEnv* env,
+                                  char* server_address,
+                                  int port,
+                                  char* stream_id,
+                                  char* password,
+                                  int latency_ms,
+                                  int sender_mode) {
   State* state = unifex_alloc_state(env);
   state = new (state) State();
 
@@ -414,7 +350,7 @@ UNIFEX_TERM start_client_with_mode(UnifexEnv* env,
                        std::string(password),
                        latency_ms);
 
-    UNIFEX_TERM result = start_client_with_mode_result_ok(env, state);
+    UNIFEX_TERM result = start_client_native_result_ok(env, state);
     unifex_release_state(env, state);
 
     return result;
@@ -423,11 +359,11 @@ UNIFEX_TERM start_client_with_mode(UnifexEnv* env,
 
     unifex_release_state(env, state);
 
-    return start_client_with_mode_result_error(env, e.what(), code);
+    return start_client_native_result_error(env, e.what(), code);
   } catch (const std::exception& e) {
     unifex_release_state(env, state);
 
-    return start_client_with_mode_result_error(env, e.what(), -1);
+    return start_client_native_result_error(env, e.what(), -1);
   }
 }
 

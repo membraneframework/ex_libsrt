@@ -53,7 +53,19 @@ defmodule ExLibSRT.Client do
   @doc """
   Starts a new SRT connection to the target address and port and links to the current process.
 
-  This function supports both modern options-based calls and backwards-compatible positional args.
+  Use the options-based variant for clarity:
+
+      ExLibSRT.Client.start_link("127.0.0.1", 12_000, "stream-id",
+        password: "",
+        latency_ms: -1,
+        mode: :sender
+      )
+
+  Mode controls socket behavior:
+  - `:sender` (default) is for pushing payloads with `send_data/2`
+  - `:receiver` is for consuming incoming `{:srt_data, conn_id, payload}` messages
+
+  Positional overloads are still supported for backwards compatibility.
   """
   @spec start_link(String.t(), non_neg_integer(), String.t()) ::
           {:ok, t()} | {:error, String.t(), integer()}
@@ -83,7 +95,13 @@ defmodule ExLibSRT.Client do
   @doc """
   Starts a new SRT connection to the target address and port outside the supervision tree.
 
-  This function supports both modern options-based calls and backwards-compatible positional args.
+  This is equivalent to `start_link/4`, but does not link the client process to the caller.
+
+  Prefer the options-based variant:
+
+      ExLibSRT.Client.start("127.0.0.1", 12_000, "stream-id", mode: :receiver)
+
+  Positional overloads are still supported for backwards compatibility.
   """
   @spec start(String.t(), non_neg_integer(), String.t()) ::
           {:ok, t()} | {:error, String.t(), integer()}

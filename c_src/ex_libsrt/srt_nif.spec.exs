@@ -77,10 +77,7 @@ spec send_server_data(conn_id :: int, data :: payload, state) :: (:ok :: label) 
 
 spec stop_server(state) :: (:ok :: label) | {:error :: label, reason :: string}
 
-
-spec start_client(server_address :: string, port :: int, stream_id :: string, password :: string, latency_ms :: int) :: {:ok :: label, state} | {:error :: label, reason :: string, code :: int}
-
-spec start_client_with_mode(server_address :: string, port :: int, stream_id :: string, password :: string, latency_ms :: int, sender_mode :: int) :: {:ok :: label, state} | {:error :: label, reason :: string, code :: int}
+spec start_client_native(server_address :: string, port :: int, stream_id :: string, password :: string, latency_ms :: int, sender_mode :: int) :: {:ok :: label, state} | {:error :: label, reason :: string, code :: int}
 
 spec send_client_data(data :: payload, state) :: (:ok :: label) | {:error :: label, reason :: string}
 
@@ -98,4 +95,4 @@ sends :srt_client_connected :: label
 sends :srt_client_disconnected :: label
 sends {:srt_client_error :: label, reason :: string}
 
-dirty :io,  start_server: 4, close_server_connection: 2, send_server_data: 3, stop_server: 1, start_client: 5, start_client_with_mode: 6, read_server_socket_stats: 2, read_client_socket_stats: 1
+dirty :io,  start_server: 4, close_server_connection: 2, send_server_data: 3, stop_server: 1, start_client_native: 6, read_server_socket_stats: 2, read_client_socket_stats: 1

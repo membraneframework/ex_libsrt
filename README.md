@@ -32,7 +32,8 @@ To send payloads from server to a connected client, use `ExLibSRT.Server.send_da
 
 ## Client modes (`:sender` / `:receiver`)
 
-`ExLibSRT.Client` supports explicit client socket mode via options:
+`ExLibSRT.Client` supports explicit client socket mode via options.
+The API is atom-based (`:sender | :receiver`) and does not expose raw integer mode flags:
 
 ```elixir
 # default mode is :sender
