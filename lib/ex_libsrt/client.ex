@@ -3,90 +3,122 @@ defmodule ExLibSRT.Client do
   Implementation of the SRT client.
 
   ## API
-  The client API consinsts of the following functions:
 
-  * `start/3` - starts a client connection to the server
-  * `start/4` - starts a client connection to the server with password authentication
-  * `start_link/3` - starts a client connection to the server and links to current process
-  * `start_link/4` - starts a client connection to the server with password authentication and links to current process
-  * `start_link/5` - starts a client connection to the server with password authentication, sets SRT latency and links to current process
-  * `stop/1` - stops the client connection
-  * `send_data/2` - sends a packet through the client connection
+  Preferred API (keyword options):
 
-  ## Password Authentication
+    * `start/4` - starts a client connection outside a supervision tree
+    * `start_link/4` - starts a client connection and links it to the caller
 
-  When connecting to a server that requires password authentication:
-  - Password must be between 10 and 79 characters long (SRT specification requirement: https://github.com/Haivision/srt/blob/master/docs/API/API-socket-options.md#srto_passphrase)
-  - Empty string means no password authentication (default behavior)
-  - Password must match the server's password
+  Supported options:
 
-  A process starting the client will also receive the following notifications:
-  * `t:srt_client_started/0`
-  * `t:srt_client_disconnected/0`
-  * `t:srt_client_error/0`
+    * `:password` - SRT passphrase (default: `""`)
+    * `:latency_ms` - SRT socket latency in milliseconds (default: `-1`)
+    * `:mode` - `:sender | :receiver` (default: `:sender`)
+
+  Backwards-compatible API (still supported):
+
+    * `start/3`
+    * `start/4` with password as 4th argument
+    * `start_link/3`
+    * `start_link/4` with password as 4th argument
+    * `start_link/5` with password and latency arguments
+
+  A process starting the client will receive the following notifications:
+
+    * `t:srt_client_started/0`
+    * `t:srt_client_disconnected/0`
+    * `t:srt_client_error/0`
   """
 
   use Agent
-  require Logger
+
+  @default_password ""
+  @default_latency_ms -1
+  @default_mode :sender
+  @max_payload_size 1316
 
   @type t :: pid()
-
+  @type mode :: ExLibSRT.Native.client_mode()
   @type srt_client_started :: :srt_client_started
-  @type srt_client_disconnected :: :srt_client_started
+  @type srt_client_disconnected :: :srt_client_disconnected
   @type srt_client_error :: {:srt_client_error, reason :: String.t()}
+
+  @type start_opt ::
+          {:password, String.t()}
+          | {:latency_ms, integer()}
+          | {:mode, mode()}
+
+  @type start_opts :: [start_opt()]
 
   @doc """
   Starts a new SRT connection to the target address and port and links to the current process.
 
-  ## Password Authentication
+  Use the options-based variant for clarity:
 
-  If a password is provided, it must be between 10 and 79 characters long according to SRT specification.
-  An empty string means no password authentication will be used.
+      ExLibSRT.Client.start_link("127.0.0.1", 12_000, "stream-id",
+        password: "",
+        latency_ms: -1,
+        mode: :sender
+      )
+
+  Mode controls socket behavior:
+  - `:sender` (default) is for pushing payloads with `send_data/2`
+  - `:receiver` is for consuming incoming `{:srt_data, conn_id, payload}` messages
+
+  Positional overloads are still supported for backwards compatibility.
   """
-  @spec start_link(
-          address :: String.t(),
-          port :: non_neg_integer(),
-          stream_id :: String.t(),
-          password :: String.t(),
-          latency_ms :: integer()
-        ) ::
-          {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
-  def start_link(address, port, stream_id, password \\ "", latency_ms \\ -1) do
-    with :ok <- validate_password(password),
-         {:ok, client_ref} <-
-           ExLibSRT.Native.start_client(address, port, stream_id, password, latency_ms) do
-      Agent.start_link(fn -> client_ref end)
-    else
-      {:error, reason, error_code} -> {:error, reason, error_code}
-      {:error, reason} -> {:error, reason, 0}
-    end
+  @spec start_link(String.t(), non_neg_integer(), String.t()) ::
+          {:ok, t()} | {:error, String.t(), integer()}
+  @spec start_link(String.t(), non_neg_integer(), String.t(), String.t()) ::
+          {:ok, t()} | {:error, String.t(), integer()}
+  @spec start_link(String.t(), non_neg_integer(), String.t(), String.t(), integer()) ::
+          {:ok, t()} | {:error, String.t(), integer()}
+  @spec start_link(String.t(), non_neg_integer(), String.t(), start_opts()) ::
+          {:ok, t()} | {:error, String.t(), integer()}
+  def start_link(address, port, stream_id) do
+    start_link(address, port, stream_id, [])
+  end
+
+  def start_link(address, port, stream_id, password) when is_binary(password) do
+    start_link(address, port, stream_id, password, @default_latency_ms)
+  end
+
+  def start_link(address, port, stream_id, opts) when is_list(opts) do
+    do_start_link(address, port, stream_id, opts)
+  end
+
+  def start_link(address, port, stream_id, password, latency_ms)
+      when is_binary(password) and is_integer(latency_ms) do
+    do_start_link(address, port, stream_id, password: password, latency_ms: latency_ms)
   end
 
   @doc """
   Starts a new SRT connection to the target address and port outside the supervision tree.
 
-  ## Password Authentication
+  This is equivalent to `start_link/4`, but does not link the client process to the caller.
 
-  If a password is provided, it must be between 10 and 79 characters long according to SRT specification.
-  An empty string means no password authentication will be used.
+  Prefer the options-based variant:
+
+      ExLibSRT.Client.start("127.0.0.1", 12_000, "stream-id", mode: :receiver)
+
+  Positional overloads are still supported for backwards compatibility.
   """
-  @spec start(address :: String.t(), port :: non_neg_integer(), stream_id :: String.t()) ::
-          {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
-  @spec start(
-          address :: String.t(),
-          port :: non_neg_integer(),
-          stream_id :: String.t(),
-          password :: String.t()
-        ) ::
-          {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
-  def start(address, port, stream_id, password \\ "") do
-    with :ok <- validate_password(password),
-         {:ok, client_ref} <- ExLibSRT.Native.start_client(address, port, stream_id, password, -1) do
-      Agent.start(fn -> client_ref end, name: {:global, client_ref})
-    else
-      {:error, reason, error_code} -> {:error, reason, error_code}
-      {:error, reason} -> {:error, reason, 0}
-    end
+  @spec start(String.t(), non_neg_integer(), String.t()) ::
+          {:ok, t()} | {:error, String.t(), integer()}
+  @spec start(String.t(), non_neg_integer(), String.t(), String.t()) ::
+          {:ok, t()} | {:error, String.t(), integer()}
+  @spec start(String.t(), non_neg_integer(), String.t(), start_opts()) ::
+          {:ok, t()} | {:error, String.t(), integer()}
+  def start(address, port, stream_id) do
+    start(address, port, stream_id, [])
+  end
+
+  def start(address, port, stream_id, password) when is_binary(password) do
+    do_start(address, port, stream_id, password: password)
+  end
+
+  def start(address, port, stream_id, opts) when is_list(opts) do
+    do_start(address, port, stream_id, opts)
   end
 
   @doc """
@@ -102,10 +134,9 @@ defmodule ExLibSRT.Client do
   @doc """
   Sends data through the client connection.
   """
-  @spec send_data(binary(), t()) :: :ok | {:error, :payload_too_large | (reason :: String.t())}
-  def send_data(payload, agent)
-
-  def send_data(payload, _agent) when byte_size(payload) > 1316, do: {:error, :payload_too_large}
+  @spec send_data(binary(), t()) :: :ok | {:error, :payload_too_large | String.t()}
+  def send_data(payload, _agent) when byte_size(payload) > @max_payload_size,
+    do: {:error, :payload_too_large}
 
   def send_data(payload, agent) do
     if Process.alive?(agent) do
@@ -119,8 +150,7 @@ defmodule ExLibSRT.Client do
   @doc """
   Reads socket statistics.
   """
-  @spec read_socket_stats(t()) ::
-          {:ok, ExLibSRT.SocketStats.t()} | {:error, reason :: String.t()}
+  @spec read_socket_stats(t()) :: {:ok, ExLibSRT.SocketStats.t()} | {:error, String.t()}
   def read_socket_stats(agent) do
     if Process.alive?(agent) do
       client_ref = Agent.get(agent, & &1)
@@ -130,7 +160,77 @@ defmodule ExLibSRT.Client do
     end
   end
 
-  # Private functions
+  defp do_start_link(address, port, stream_id, opts) do
+    with {:ok, normalized_opts} <- normalize_start_opts(opts),
+         :ok <- validate_password(normalized_opts.password),
+         {:ok, client_ref} <- start_native_client(address, port, stream_id, normalized_opts) do
+      Agent.start_link(fn -> client_ref end)
+    else
+      {:error, reason, error_code} -> {:error, reason, error_code}
+      {:error, reason} -> {:error, reason, 0}
+    end
+  end
+
+  defp do_start(address, port, stream_id, opts) do
+    with {:ok, normalized_opts} <- normalize_start_opts(opts),
+         :ok <- validate_password(normalized_opts.password),
+         {:ok, client_ref} <- start_native_client(address, port, stream_id, normalized_opts) do
+      Agent.start(fn -> client_ref end, name: {:global, client_ref})
+    else
+      {:error, reason, error_code} -> {:error, reason, error_code}
+      {:error, reason} -> {:error, reason, 0}
+    end
+  end
+
+  defp start_native_client(address, port, stream_id, opts) do
+    ExLibSRT.Native.start_client(
+      address,
+      port,
+      stream_id,
+      opts.password,
+      opts.latency_ms,
+      opts.mode
+    )
+  end
+
+  defp normalize_start_opts(opts) when is_list(opts) do
+    if Keyword.keyword?(opts) do
+      with {:ok, _validated_opts} <- Keyword.validate(opts, [:password, :latency_ms, :mode]),
+           latency_ms <- Keyword.get(opts, :latency_ms, @default_latency_ms),
+           :ok <- validate_latency_ms(latency_ms),
+           mode <- Keyword.get(opts, :mode, @default_mode),
+           :ok <- validate_mode(mode) do
+        {:ok,
+         %{
+           password: Keyword.get(opts, :password, @default_password),
+           latency_ms: latency_ms,
+           mode: mode
+         }}
+      else
+        {:error, invalid_keys} when is_list(invalid_keys) ->
+          {:error,
+           "Unsupported client options: " <>
+             Enum.map_join(invalid_keys, ", ", &inspect/1)}
+
+        {:error, _reason} = error ->
+          error
+      end
+    else
+      {:error, "Client options must be a keyword list"}
+    end
+  end
+
+  defp normalize_start_opts(_opts), do: {:error, "Client options must be a keyword list"}
+
+  defp validate_latency_ms(latency_ms) when is_integer(latency_ms), do: :ok
+
+  defp validate_latency_ms(latency_ms),
+    do: {:error, "Latency must be an integer, got: #{inspect(latency_ms)}"}
+
+  defp validate_mode(mode) when mode in [:sender, :receiver], do: :ok
+
+  defp validate_mode(mode),
+    do: {:error, "Invalid client mode #{inspect(mode)}. Expected :sender or :receiver."}
 
   @spec validate_password(String.t()) :: :ok | {:error, String.t()}
   defp validate_password(""), do: :ok

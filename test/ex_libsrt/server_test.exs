@@ -76,6 +76,28 @@ defmodule ExLibSRT.ServerTest do
     end
 
     @tag :srt_tools_required
+    test "send data over connection", ctx do
+      stream_id = "server_data_stream_id"
+      payload = "Hello from server!"
+
+      receiver = Transmit.start_stream_receiver(ctx.udp_port)
+      on_exit(fn -> close_stream_safe(receiver) end)
+
+      proxy = Transmit.start_caller_receiving_proxy(ctx.srt_port, ctx.udp_port, stream_id)
+      on_exit(fn -> stop_proxy_safe(proxy) end)
+
+      assert_receive {:srt_server_connect_request, address, ^stream_id}, 2_000
+      assert address == "127.0.0.1"
+
+      :ok = Server.accept_awaiting_connect_request(ctx.server)
+
+      assert_receive {:srt_server_conn, conn_id, ^stream_id}, 1_000
+
+      assert :ok = Server.send_data(conn_id, payload, ctx.server)
+      assert {:ok, ^payload} = Transmit.receive_payload(receiver)
+    end
+
+    @tag :srt_tools_required
     test "can handle multiple connections", ctx do
       streams =
         for udp_port <- ctx.udp_port..(ctx.udp_port + 10), into: %{} do
@@ -249,6 +271,14 @@ defmodule ExLibSRT.ServerTest do
 
       refute_receive {:srt_server_conn_closed, _conn_id}, 1_000
       assert_receive :srt_handler_disconnected, 1_000
+    end
+  end
+
+  describe "server send_data/3" do
+    test "rejects payloads larger than 1316 bytes" do
+      payload = :crypto.strong_rand_bytes(1_317)
+
+      assert {:error, :payload_too_large} = Server.send_data(123, payload, :unused)
     end
   end
 

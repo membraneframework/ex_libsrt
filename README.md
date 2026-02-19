@@ -28,6 +28,30 @@ see: `simple_client_connection.exs`.
 To see how to handle multiple client connections with a single server using 
 `ExLibSRT.Connection.Handler`, see: `connection_handler.exs`.
 
+To send payloads from server to a connected client, use `ExLibSRT.Server.send_data/3`.
+
+## Client modes (`:sender` / `:receiver`)
+
+`ExLibSRT.Client` supports explicit client socket mode via options.
+The API is atom-based (`:sender | :receiver`) and does not expose raw integer mode flags:
+
+```elixir
+# default mode is :sender
+{:ok, client} = ExLibSRT.Client.start("127.0.0.1", 12_000, "stream-id")
+
+# receiver mode (can receive `{:srt_data, conn_id, payload}` messages)
+{:ok, client} =
+  ExLibSRT.Client.start("127.0.0.1", 12_000, "stream-id", mode: :receiver)
+
+# with password and latency
+{:ok, client} =
+  ExLibSRT.Client.start("127.0.0.1", 12_000, "stream-id",
+    password: "validpassword123",
+    latency_ms: 120,
+    mode: :receiver
+  )
+```
+
 You can launch each of these scripts with the following sequence of commands:
 ```
 cd examples/

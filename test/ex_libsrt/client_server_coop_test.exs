@@ -41,6 +41,59 @@ defmodule ExLibSRT.ClientServerCoopTest do
     assert_receive :stopped, 8000
   end
 
+  test "receive data in caller mode when client is started as receiver", ctx do
+    parent = self()
+
+    {:ok, server_task} =
+      Task.start(fn ->
+        assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port)
+
+        send(parent, :server_running)
+
+        assert_receive {:srt_server_connect_request, _address, "some_stream_id"}, 1_000
+        :ok = Server.accept_awaiting_connect_request(server)
+
+        assert_receive {:srt_server_conn, conn_id, _stream_id}, 1_000
+        send(parent, {:server_connected, server, conn_id})
+
+        receive do
+          :stop_server -> :ok
+        after
+          15_000 -> :ok
+        end
+
+        Server.stop(server)
+        send(parent, :server_stopped)
+      end)
+
+    assert_receive :server_running, 1_000
+
+    assert {:ok, client} =
+             Client.start("127.0.0.1", ctx.srt_port, "some_stream_id", mode: :receiver)
+
+    on_exit(fn ->
+      _ =
+        try do
+          Client.stop(client)
+        catch
+          :exit, _reason -> :ok
+        end
+
+      :ok
+    end)
+
+    assert_receive :srt_client_connected, 2_000
+    assert_receive {:server_connected, server, conn_id}, 2_000
+
+    assert :ok = Server.send_data(conn_id, "hello", server)
+    assert_receive {:srt_data, 0, "hello"}, 5_000
+
+    assert {:error, "Client is not in sender mode"} = Client.send_data("hello", client)
+
+    send(server_task, :stop_server)
+    assert_receive :server_stopped, 2_000
+  end
+
   test "reject client connection", ctx do
     parent = self()
 

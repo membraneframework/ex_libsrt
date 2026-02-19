@@ -130,6 +130,28 @@ defmodule ExLibSRT.ClientTest do
     end
   end
 
+  describe "client options validation" do
+    test "rejects invalid mode option" do
+      assert {:error, "Invalid client mode :invalid. Expected :sender or :receiver.", 0} =
+               Client.start_link("127.0.0.1", 8080, "stream1", mode: :invalid)
+    end
+
+    test "rejects unsupported options" do
+      assert {:error, "Unsupported client options: :unknown", 0} =
+               Client.start_link("127.0.0.1", 8080, "stream1", unknown: true)
+    end
+
+    test "rejects non-integer latency option" do
+      assert {:error, "Latency must be an integer, got: \"100\"", 0} =
+               Client.start_link("127.0.0.1", 8080, "stream1", latency_ms: "100")
+    end
+
+    test "rejects non-keyword options list" do
+      assert {:error, "Client options must be a keyword list", 0} =
+               Client.start_link("127.0.0.1", 8080, "stream1", ~c"not-keyword")
+    end
+  end
+
   defp prepare_streaming(_ctx) do
     udp_port = Enum.random(10_000..20_000)
     srt_port = Enum.random(10_000..20_000)

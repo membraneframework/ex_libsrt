@@ -58,6 +58,31 @@ defmodule ExLibSRT.SRTLiveTransmit do
     port
   end
 
+  @spec start_caller_receiving_proxy(non_neg_integer(), non_neg_integer(), binary()) ::
+          receiving_proxy()
+  def start_caller_receiving_proxy(srt_port, udp_port, stream_id \\ "") do
+    auth =
+      if stream_id != "" do
+        "?streamid=#{stream_id}"
+      else
+        ""
+      end
+
+    args = [
+      :binary,
+      {:args,
+       [
+         "-q",
+         "-loglevel:fatal",
+         "-autoreconnect:no",
+         "srt://127.0.0.1:#{srt_port}" <> auth,
+         "udp://127.0.0.1:#{udp_port}"
+       ]}
+    ]
+
+    Port.open({:spawn_executable, find_executable("srt-live-transmit")}, args)
+  end
+
   defp find_executable(executable_name) do
     case System.find_executable(executable_name) do
       nil ->
