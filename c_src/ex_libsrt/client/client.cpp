@@ -177,6 +177,10 @@ void Client::Stop() {
 }
 
 void Client::RunEpoll() {
+  // Setting this one prevents spamming with "no sockets to check, this would deadlock" logs during closing
+  // of the system, when there are no sockets in the epoll anymore
+  srt_epoll_set(epoll, SRT_EPOLL_ENABLE_EMPTY);
+
   try {
     while (running.load()) {
       int read_len = 1;
@@ -195,6 +199,13 @@ void Client::RunEpoll() {
                              0,
                              0);
       if (n < 0) {
+        // clear out timeout/empty-epoll errors that can happen during teardown
+        srt_clearlasterror();
+
+        if (!running.load()) {
+          return;
+        }
+
         continue;
       }
 
