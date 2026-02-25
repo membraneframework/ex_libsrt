@@ -14,6 +14,10 @@ defmodule ExLibSRT.Client do
     * `:password` - SRT passphrase (default: `""`)
     * `:latency_ms` - SRT socket latency in milliseconds (default: `-1`)
     * `:mode` - `:sender | :receiver` (default: `:sender`)
+    * `:rcvbuf` - SRT-level receive buffer in bytes (`SRTO_RCVBUF`)
+    * `:udp_rcvbuf` - OS kernel UDP receive buffer in bytes (`SRTO_UDP_RCVBUF`)
+    * `:sndbuf` - SRT-level send buffer in bytes (`SRTO_SNDBUF`)
+    * `:udp_sndbuf` - OS kernel UDP send buffer in bytes (`SRTO_UDP_SNDBUF`)
 
   Backwards-compatible API (still supported):
 
@@ -47,6 +51,10 @@ defmodule ExLibSRT.Client do
           {:password, String.t()}
           | {:latency_ms, integer()}
           | {:mode, mode()}
+          | {:rcvbuf, pos_integer()}
+          | {:udp_rcvbuf, pos_integer()}
+          | {:sndbuf, pos_integer()}
+          | {:udp_sndbuf, pos_integer()}
 
   @type start_opts :: [start_opt()]
 
@@ -189,22 +197,29 @@ defmodule ExLibSRT.Client do
       stream_id,
       opts.password,
       opts.latency_ms,
-      opts.mode
+      opts.mode,
+      opts.socket_opts
     )
   end
 
+  @known_opts [:password, :latency_ms, :mode, :rcvbuf, :udp_rcvbuf, :sndbuf, :udp_sndbuf]
+
   defp normalize_start_opts(opts) when is_list(opts) do
     if Keyword.keyword?(opts) do
-      with {:ok, _validated_opts} <- Keyword.validate(opts, [:password, :latency_ms, :mode]),
+      with {:ok, _validated_opts} <- Keyword.validate(opts, @known_opts),
            latency_ms <- Keyword.get(opts, :latency_ms, @default_latency_ms),
            :ok <- validate_latency_ms(latency_ms),
            mode <- Keyword.get(opts, :mode, @default_mode),
-           :ok <- validate_mode(mode) do
+           :ok <- validate_mode(mode),
+           :ok <- validate_buffer_opts(opts) do
         {:ok,
          %{
            password: Keyword.get(opts, :password, @default_password),
            latency_ms: latency_ms,
-           mode: mode
+           mode: mode,
+           socket_opts:
+             opts
+             |> Keyword.take([:rcvbuf, :udp_rcvbuf, :sndbuf, :udp_sndbuf])
          }}
       else
         {:error, invalid_keys} when is_list(invalid_keys) ->
@@ -231,6 +246,23 @@ defmodule ExLibSRT.Client do
 
   defp validate_mode(mode),
     do: {:error, "Invalid client mode #{inspect(mode)}. Expected :sender or :receiver."}
+
+  @buffer_opt_keys [:rcvbuf, :udp_rcvbuf, :sndbuf, :udp_sndbuf]
+
+  defp validate_buffer_opts(opts) do
+    Enum.reduce_while(@buffer_opt_keys, :ok, fn key, :ok ->
+      case Keyword.fetch(opts, key) do
+        :error ->
+          {:cont, :ok}
+
+        {:ok, val} when is_integer(val) and val > 0 ->
+          {:cont, :ok}
+
+        {:ok, val} ->
+          {:halt, {:error, "#{key} must be a positive integer, got: #{inspect(val)}"}}
+      end
+    end)
+  end
 
   @spec validate_password(String.t()) :: :ok | {:error, String.t()}
   defp validate_password(""), do: :ok

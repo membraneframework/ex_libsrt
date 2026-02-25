@@ -35,7 +35,11 @@ public:
            int port,
            const std::string& stream_id,
            const std::string& password = "",
-           int latency_ms = -1);
+           int latency_ms = -1,
+           int rcvbuf = -1,
+           int udp_rcvbuf = -1,
+           int sndbuf = -1,
+           int udp_sndbuf = -1);
   void Send(std::unique_ptr<char[]> data, int len);
   std::unique_ptr<SrtSocketStats> ReadSocketStats(bool clear_intervals);
   void Stop();

@@ -63,16 +63,51 @@ defmodule ExLibSRT.Server do
   @type srt_server_connect_request ::
           {:srt_server_connect_request, address :: String.t(), stream_id :: String.t()}
 
+  @type start_opt ::
+          {:password, String.t()}
+          | {:latency_ms, integer()}
+          | {:rcvbuf, pos_integer()}
+          | {:udp_rcvbuf, pos_integer()}
+          | {:sndbuf, pos_integer()}
+          | {:udp_sndbuf, pos_integer()}
+
+  @type start_opts :: [start_opt()]
+
   @doc """
   Starts a new SRT server binding to given address and port and links to current process.
 
   One may usually want to bind to `0.0.0.0` address.
+
+  ## Options
+
+    * `:password` - SRT passphrase (default: `""`)
+    * `:latency_ms` - SRT socket latency in milliseconds (default: `-1`)
+    * `:rcvbuf` - SRT-level receive buffer in bytes (`SRTO_RCVBUF`)
+    * `:udp_rcvbuf` - OS kernel UDP receive buffer in bytes (`SRTO_UDP_RCVBUF`)
+    * `:sndbuf` - SRT-level send buffer in bytes (`SRTO_SNDBUF`)
+    * `:udp_sndbuf` - OS kernel UDP send buffer in bytes (`SRTO_UDP_SNDBUF`)
 
   ## Password Requirements
 
   If a password is provided, it must be between 10 and 79 characters long according to SRT specification.
   An empty string means no password authentication will be used.
   """
+  @spec start_link(address :: String.t(), port :: non_neg_integer()) ::
+          {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
+  def start_link(address, port) do
+    do_start_link(address, port, [])
+  end
+
+  @spec start_link(address :: String.t(), port :: non_neg_integer(), String.t() | start_opts()) ::
+          {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
+  def start_link(address, port, password) when is_binary(password) do
+    do_start_link(address, port, password: password)
+  end
+
+  def start_link(address, port, opts) when is_list(opts) do
+    do_start_link(address, port, opts)
+  end
+
   @spec start_link(
           address :: String.t(),
           port :: non_neg_integer(),
@@ -80,20 +115,17 @@ defmodule ExLibSRT.Server do
           latency_ms :: integer()
         ) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
-  def start_link(address, port, password \\ "", latency_ms \\ -1) do
-    with :ok <- validate_password(password),
-         {:ok, server_ref} <- ExLibSRT.Native.start_server(address, port, password, latency_ms) do
-      Agent.start_link(fn -> server_ref end)
-    else
-      {:error, reason, error_code} -> {:error, reason, error_code}
-      {:error, reason} -> {:error, reason, 0}
-    end
+  def start_link(address, port, password, latency_ms)
+      when is_binary(password) and is_integer(latency_ms) do
+    do_start_link(address, port, password: password, latency_ms: latency_ms)
   end
 
   @doc """
   Starts a new SRT server outside the supervision tree, binding to given address and port.
 
   One may usually want to bind to `0.0.0.0` address.
+
+  Accepts the same options as `start_link/3`.
 
   ## Password Requirements
 
@@ -102,16 +134,18 @@ defmodule ExLibSRT.Server do
   """
   @spec start(address :: String.t(), port :: non_neg_integer()) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
-  @spec start(address :: String.t(), port :: non_neg_integer(), password :: String.t()) ::
+  def start(address, port) do
+    do_start(address, port, [])
+  end
+
+  @spec start(address :: String.t(), port :: non_neg_integer(), String.t() | start_opts()) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
-  def start(address, port, password \\ "") do
-    with :ok <- validate_password(password),
-         {:ok, server_ref} <- ExLibSRT.Native.start_server(address, port, password, -1) do
-      Agent.start(fn -> server_ref end, name: {:global, server_ref})
-    else
-      {:error, reason, error_code} -> {:error, reason, error_code}
-      {:error, reason} -> {:error, reason, 0}
-    end
+  def start(address, port, password) when is_binary(password) do
+    do_start(address, port, password: password)
+  end
+
+  def start(address, port, opts) when is_list(opts) do
+    do_start(address, port, opts)
   end
 
   @doc """
@@ -221,6 +255,85 @@ defmodule ExLibSRT.Server do
   end
 
   # Private functions
+
+  @known_opts [:password, :latency_ms, :rcvbuf, :udp_rcvbuf, :sndbuf, :udp_sndbuf]
+
+  defp do_start_link(address, port, opts) do
+    with {:ok, normalized} <- normalize_start_opts(opts),
+         :ok <- validate_password(normalized.password),
+         {:ok, server_ref} <-
+           ExLibSRT.Native.start_server(
+             address,
+             port,
+             normalized.password,
+             normalized.latency_ms,
+             normalized.socket_opts
+           ) do
+      Agent.start_link(fn -> server_ref end)
+    else
+      {:error, reason, error_code} -> {:error, reason, error_code}
+      {:error, reason} -> {:error, reason, 0}
+    end
+  end
+
+  defp do_start(address, port, opts) do
+    with {:ok, normalized} <- normalize_start_opts(opts),
+         :ok <- validate_password(normalized.password),
+         {:ok, server_ref} <-
+           ExLibSRT.Native.start_server(
+             address,
+             port,
+             normalized.password,
+             normalized.latency_ms,
+             normalized.socket_opts
+           ) do
+      Agent.start(fn -> server_ref end, name: {:global, server_ref})
+    else
+      {:error, reason, error_code} -> {:error, reason, error_code}
+      {:error, reason} -> {:error, reason, 0}
+    end
+  end
+
+  defp normalize_start_opts(opts) when is_list(opts) do
+    if Keyword.keyword?(opts) do
+      with {:ok, _} <- Keyword.validate(opts, @known_opts),
+           :ok <- validate_buffer_opts(opts) do
+        {:ok,
+         %{
+           password: Keyword.get(opts, :password, ""),
+           latency_ms: Keyword.get(opts, :latency_ms, -1),
+           socket_opts: Keyword.take(opts, [:rcvbuf, :udp_rcvbuf, :sndbuf, :udp_sndbuf])
+         }}
+      else
+        {:error, invalid_keys} when is_list(invalid_keys) ->
+          {:error,
+           "Unsupported server options: " <>
+             Enum.map_join(invalid_keys, ", ", &inspect/1)}
+
+        {:error, _reason} = error ->
+          error
+      end
+    else
+      {:error, "Server options must be a keyword list"}
+    end
+  end
+
+  @buffer_opt_keys [:rcvbuf, :udp_rcvbuf, :sndbuf, :udp_sndbuf]
+
+  defp validate_buffer_opts(opts) do
+    Enum.reduce_while(@buffer_opt_keys, :ok, fn key, :ok ->
+      case Keyword.fetch(opts, key) do
+        :error ->
+          {:cont, :ok}
+
+        {:ok, val} when is_integer(val) and val > 0 ->
+          {:cont, :ok}
+
+        {:ok, val} ->
+          {:halt, {:error, "#{key} must be a positive integer, got: #{inspect(val)}"}}
+      end
+    end)
+  end
 
   @spec validate_password(String.t()) :: :ok | {:error, String.t()}
   defp validate_password(""), do: :ok

@@ -19,7 +19,11 @@ void Client::Run(const std::string& address,
                  int port,
                  const std::string& stream_id,
                  const std::string& password,
-                 int latency_ms) {
+                 int latency_ms,
+                 int rcvbuf,
+                 int udp_rcvbuf,
+                 int sndbuf,
+                 int udp_sndbuf) {
   this->password = password;
 
   struct sockaddr_storage ss;
@@ -75,6 +79,30 @@ void Client::Run(const std::string& address,
 
   if (latency_ms >= 0) {
     if (srt_setsockflag(srt_sock, SRTO_LATENCY, &latency_ms, sizeof latency_ms) == SRT_ERROR) {
+      throw std::runtime_error(std::string(srt_getlasterror_str()));
+    }
+  }
+
+  if (rcvbuf >= 0) {
+    if (srt_setsockflag(srt_sock, SRTO_RCVBUF, &rcvbuf, sizeof rcvbuf) == SRT_ERROR) {
+      throw std::runtime_error(std::string(srt_getlasterror_str()));
+    }
+  }
+
+  if (udp_rcvbuf >= 0) {
+    if (srt_setsockflag(srt_sock, SRTO_UDP_RCVBUF, &udp_rcvbuf, sizeof udp_rcvbuf) == SRT_ERROR) {
+      throw std::runtime_error(std::string(srt_getlasterror_str()));
+    }
+  }
+
+  if (sndbuf >= 0) {
+    if (srt_setsockflag(srt_sock, SRTO_SNDBUF, &sndbuf, sizeof sndbuf) == SRT_ERROR) {
+      throw std::runtime_error(std::string(srt_getlasterror_str()));
+    }
+  }
+
+  if (udp_sndbuf >= 0) {
+    if (srt_setsockflag(srt_sock, SRTO_UDP_SNDBUF, &udp_sndbuf, sizeof udp_sndbuf) == SRT_ERROR) {
       throw std::runtime_error(std::string(srt_getlasterror_str()));
     }
   }

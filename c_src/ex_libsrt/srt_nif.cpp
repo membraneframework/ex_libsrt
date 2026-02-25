@@ -129,7 +129,11 @@ UNIFEX_TERM start_server(UnifexEnv* env,
                          char* address,
                          int port,
                          char* password,
-                         int latency_ms) {
+                         int latency_ms,
+                         int rcvbuf,
+                         int udp_rcvbuf,
+                         int sndbuf,
+                         int udp_sndbuf) {
   State* state = unifex_alloc_state(env);
   state = new (state) State();
 
@@ -190,7 +194,7 @@ UNIFEX_TERM start_server(UnifexEnv* env,
               state->env, state->owner, 1, address.c_str(), stream_id.c_str());
         });
 
-    state->server->Run(std::string(address), port, std::string(password), latency_ms);
+    state->server->Run(std::string(address), port, std::string(password), latency_ms, rcvbuf, udp_rcvbuf, sndbuf, udp_sndbuf);
 
     UNIFEX_TERM result = start_server_result_ok(env, state);
     unifex_release_state(env, state);
@@ -309,7 +313,11 @@ UNIFEX_TERM start_client_native(UnifexEnv* env,
                                   char* stream_id,
                                   char* password,
                                   int latency_ms,
-                                  int sender_mode) {
+                                  int sender_mode,
+                                  int rcvbuf,
+                                  int udp_rcvbuf,
+                                  int sndbuf,
+                                  int udp_sndbuf) {
   State* state = unifex_alloc_state(env);
   state = new (state) State();
 
@@ -348,7 +356,11 @@ UNIFEX_TERM start_client_native(UnifexEnv* env,
                        port,
                        std::string(stream_id),
                        std::string(password),
-                       latency_ms);
+                       latency_ms,
+                       rcvbuf,
+                       udp_rcvbuf,
+                       sndbuf,
+                       udp_sndbuf);
 
     UNIFEX_TERM result = start_client_native_result_ok(env, state);
     unifex_release_state(env, state);

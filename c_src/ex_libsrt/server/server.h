@@ -29,7 +29,11 @@ public:
   void Run(const std::string& address,
            int port,
            const std::string& password = "",
-           int latency_ms = -1);
+           int latency_ms = -1,
+           int rcvbuf = -1,
+           int udp_rcvbuf = -1,
+           int sndbuf = -1,
+           int udp_sndbuf = -1);
 
   void Stop();
 
