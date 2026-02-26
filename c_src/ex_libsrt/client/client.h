@@ -88,7 +88,7 @@ private:
   // Maximum number of SRT packets drained per epoll read-ready cycle.
   // Mirrors srt-live-transmit's "buffering" strategy to deplete the
   // SRT receive buffer before returning to epoll_wait.
-  static constexpr int max_read_per_cycle = 20;
+  static constexpr int max_read_per_cycle = 100;
 
   std::mutex send_mutex;
   std::condition_variable send_cv;

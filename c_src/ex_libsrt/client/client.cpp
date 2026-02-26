@@ -127,10 +127,14 @@ void Client::Run(const std::string& address,
     throw std::runtime_error(std::string(srt_getlasterror_str()));
   }
 
-  int poll_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+  // Receiver mode needs OUT only until connect transition is observed.
+  // After connection we switch to IN|ERR only to avoid constant writable wakeups.
+  int poll_modes = SRT_EPOLL_ERR;
 
-  if (!sender_mode) {
-    poll_modes |= SRT_EPOLL_IN;
+  if (sender_mode) {
+    poll_modes |= SRT_EPOLL_OUT;
+  } else {
+    poll_modes |= SRT_EPOLL_IN | SRT_EPOLL_OUT;
   }
 
   if (srt_epoll_add_usock(epoll, srt_sock, &poll_modes) == SRT_ERROR) {
@@ -237,8 +241,17 @@ void Client::RunEpoll() {
         continue;
       }
 
-      if (write_len > 0 && !connected) {
+      auto socket_state = srt_getsockstate(srt_sock);
+
+      if (!connected && (write_len > 0 || socket_state == SRTS_CONNECTED)) {
         connected = true;
+
+        if (!sender_mode) {
+          const int receiver_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+          if (srt_epoll_update_usock(epoll, srt_sock, &receiver_modes) == SRT_ERROR) {
+            throw std::runtime_error(std::string(srt_getlasterror_str()));
+          }
+        }
 
         if (on_socket_connected) {
           on_socket_connected();
@@ -246,7 +259,7 @@ void Client::RunEpoll() {
       }
 
       if (read_len > 0) {
-        auto socket_state = srt_getsockstate(read_socket);
+        socket_state = srt_getsockstate(read_socket);
 
         if (!connected && socket_state == SRTS_BROKEN) {
           int code = srt_getrejectreason(read_socket);
