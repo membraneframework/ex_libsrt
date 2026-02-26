@@ -296,14 +296,36 @@ void Server::DisconnectSocket(Server::SrtSocket socket) {
 }
 
 void Server::ReadSocketData(Server::SrtSocket socket) {
-  char buffer[1500];
+  static constexpr int max_read_per_cycle = 20;
+  bool got_any = false;
 
-  int n = srt_recv(socket, buffer, sizeof(buffer));
+  for (int i = 0; i < max_read_per_cycle; ++i) {
+    char buffer[1500];
+    int n = srt_recv(socket, buffer, sizeof(buffer));
 
-  if (n == 0 || n == SRT_ERROR) {
-    DisconnectSocket(socket);
-  } else {
+    if (n == SRT_ERROR) {
+      if (srt_getlasterror(nullptr) == SRT_EASYNCRCV) {
+        break;
+      }
+
+      if (!got_any) {
+        DisconnectSocket(socket);
+        return;
+      }
+
+      break;
+    }
+
+    if (n == 0) {
+      break;
+    }
+
+    got_any = true;
     this->on_socket_data(socket, buffer, n);
+  }
+
+  if (!got_any) {
+    DisconnectSocket(socket);
   }
 }
 

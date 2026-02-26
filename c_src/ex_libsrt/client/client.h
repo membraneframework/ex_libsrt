@@ -85,6 +85,11 @@ private:
   const int send_ttl;
   const bool sender_mode;
 
+  // Maximum number of SRT packets drained per epoll read-ready cycle.
+  // Mirrors srt-live-transmit's "buffering" strategy to deplete the
+  // SRT receive buffer before returning to epoll_wait.
+  static constexpr int max_read_per_cycle = 20;
+
   std::mutex send_mutex;
   std::condition_variable send_cv;
   std::deque<std::pair<std::unique_ptr<char[]>, int>> send_queue;

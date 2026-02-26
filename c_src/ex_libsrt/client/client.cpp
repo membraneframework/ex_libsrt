@@ -267,11 +267,47 @@ void Client::RunEpoll() {
         }
 
         if (!sender_mode && socket_state == SRTS_CONNECTED) {
-          char buffer[1500];
+          // Drain up to max_read_per_cycle packets per epoll cycle
+          // to deplete the SRT receive buffer before returning to
+          // epoll_wait.  Mirrors srt-live-transmit's batched-read
+          // strategy.  Each packet is delivered as its own callback
+          // to preserve per-message semantics for consumers.
+          bool got_any = false;
 
-          int bytes_read = srt_recv(read_socket, buffer, sizeof(buffer));
+          for (int i = 0; i < max_read_per_cycle; ++i) {
+            char buffer[1500];
+            int bytes_read = srt_recv(read_socket, buffer, sizeof(buffer));
 
-          if (bytes_read == 0 || bytes_read == SRT_ERROR) {
+            if (bytes_read == SRT_ERROR) {
+              if (srt_getlasterror(nullptr) == SRT_EASYNCRCV) {
+                // No more data available right now — buffer drained.
+                break;
+              }
+
+              // Real error — treat as disconnect.
+              running.store(false);
+              send_cv.notify_all();
+
+              if (on_socket_disconnected) {
+                on_socket_disconnected();
+              }
+
+              return;
+            }
+
+            if (bytes_read == 0) {
+              break;
+            }
+
+            got_any = true;
+
+            if (on_socket_data) {
+              on_socket_data(buffer, bytes_read);
+            }
+          }
+
+          if (!got_any) {
+            // No data despite read-ready — connection lost.
             running.store(false);
             send_cv.notify_all();
 
@@ -280,10 +316,6 @@ void Client::RunEpoll() {
             }
 
             return;
-          }
-
-          if (on_socket_data) {
-            on_socket_data(buffer, bytes_read);
           }
         }
       }
