@@ -70,6 +70,7 @@ defmodule ExLibSRT.Server do
           | {:udp_rcvbuf, pos_integer()}
           | {:sndbuf, pos_integer()}
           | {:udp_sndbuf, pos_integer()}
+          | {:sndtimeo, non_neg_integer()}
 
   @type start_opts :: [start_opt()]
 
@@ -86,6 +87,7 @@ defmodule ExLibSRT.Server do
     * `:udp_rcvbuf` - OS kernel UDP receive buffer in bytes (`SRTO_UDP_RCVBUF`)
     * `:sndbuf` - SRT-level send buffer in bytes (`SRTO_SNDBUF`)
     * `:udp_sndbuf` - OS kernel UDP send buffer in bytes (`SRTO_UDP_SNDBUF`)
+    * `:sndtimeo` - send timeout in milliseconds (`SRTO_SNDTIMEO`)
 
   ## Password Requirements
 
@@ -256,7 +258,7 @@ defmodule ExLibSRT.Server do
 
   # Private functions
 
-  @known_opts [:password, :latency_ms, :rcvbuf, :udp_rcvbuf, :sndbuf, :udp_sndbuf]
+  @known_opts [:password, :latency_ms, :rcvbuf, :udp_rcvbuf, :sndbuf, :udp_sndbuf, :sndtimeo]
 
   defp do_start_link(address, port, opts) do
     with {:ok, normalized} <- normalize_start_opts(opts),
@@ -297,12 +299,14 @@ defmodule ExLibSRT.Server do
   defp normalize_start_opts(opts) when is_list(opts) do
     if Keyword.keyword?(opts) do
       with {:ok, _} <- Keyword.validate(opts, @known_opts),
-           :ok <- validate_buffer_opts(opts) do
+           :ok <- validate_buffer_opts(opts),
+           :ok <- validate_sndtimeo_opt(opts) do
         {:ok,
          %{
            password: Keyword.get(opts, :password, ""),
            latency_ms: Keyword.get(opts, :latency_ms, -1),
-           socket_opts: Keyword.take(opts, [:rcvbuf, :udp_rcvbuf, :sndbuf, :udp_sndbuf])
+           socket_opts:
+             Keyword.take(opts, [:rcvbuf, :udp_rcvbuf, :sndbuf, :udp_sndbuf, :sndtimeo])
          }}
       else
         {:error, invalid_keys} when is_list(invalid_keys) ->
@@ -333,6 +337,19 @@ defmodule ExLibSRT.Server do
           {:halt, {:error, "#{key} must be a positive integer, got: #{inspect(val)}"}}
       end
     end)
+  end
+
+  defp validate_sndtimeo_opt(opts) do
+    case Keyword.fetch(opts, :sndtimeo) do
+      :error ->
+        :ok
+
+      {:ok, val} when is_integer(val) and val >= 0 ->
+        :ok
+
+      {:ok, val} ->
+        {:error, ":sndtimeo must be a non-negative integer, got: #{inspect(val)}"}
+    end
   end
 
   @spec validate_password(String.t()) :: :ok | {:error, String.t()}

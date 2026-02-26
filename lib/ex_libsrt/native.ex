@@ -14,12 +14,14 @@ defmodule ExLibSRT.Native do
     * `:udp_rcvbuf`  – OS kernel UDP receive buffer (`SRTO_UDP_RCVBUF`, default ~8 MB)
     * `:sndbuf`      – SRT-level send buffer (`SRTO_SNDBUF`, default ~12 MB)
     * `:udp_sndbuf`  – OS kernel UDP send buffer (`SRTO_UDP_SNDBUF`, default ~64 KB)
+    * `:sndtimeo`    – send timeout in ms (`SRTO_SNDTIMEO`, default SRT value)
   """
   @type socket_opt ::
           {:rcvbuf, pos_integer()}
           | {:udp_rcvbuf, pos_integer()}
           | {:sndbuf, pos_integer()}
           | {:udp_sndbuf, pos_integer()}
+          | {:sndtimeo, non_neg_integer()}
 
   @type socket_opts :: [socket_opt()]
 
@@ -120,7 +122,8 @@ defmodule ExLibSRT.Native do
       Keyword.get(socket_opts, :rcvbuf, -1),
       Keyword.get(socket_opts, :udp_rcvbuf, -1),
       Keyword.get(socket_opts, :sndbuf, -1),
-      Keyword.get(socket_opts, :udp_sndbuf, -1)
+      Keyword.get(socket_opts, :udp_sndbuf, -1),
+      Keyword.get(socket_opts, :sndtimeo, -1)
     )
   end
 end

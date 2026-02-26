@@ -63,7 +63,7 @@ type srt_socket_stats :: %ExLibSRT.SocketStats{
 callback :load, :on_load
 callback :unload, :on_unload
 
-spec start_server(host :: string, port :: int, password :: string, latency_ms :: int, rcvbuf :: int, udp_rcvbuf :: int, sndbuf :: int, udp_sndbuf :: int) :: {:ok :: label, state} | {:error :: label, reason :: string}
+spec start_server(host :: string, port :: int, password :: string, latency_ms :: int, rcvbuf :: int, udp_rcvbuf :: int, sndbuf :: int, udp_sndbuf :: int, sndtimeo :: int) :: {:ok :: label, state} | {:error :: label, reason :: string}
 
 spec accept_awaiting_connect_request(receiver :: pid, state) :: (:ok :: label) | {:error :: label, reason :: string}
 
@@ -96,7 +96,7 @@ sends :srt_client_disconnected :: label
 sends {:srt_client_error :: label, reason :: string}
 
 dirty :io,
-  start_server: 8,
+  start_server: 9,
   close_server_connection: 2,
   send_server_data: 3,
   stop_server: 1,

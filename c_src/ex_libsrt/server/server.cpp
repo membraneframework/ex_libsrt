@@ -14,9 +14,11 @@ void Server::Run(const std::string& address,
                  int rcvbuf,
                  int udp_rcvbuf,
                  int sndbuf,
-                 int udp_sndbuf) {
+                 int udp_sndbuf,
+                 int sndtimeo) {
   this->password = password;
   this->latency_ms = latency_ms;
+  this->sndtimeo = sndtimeo;
 
   struct sockaddr_storage ss;
   socklen_t ss_len;
@@ -55,6 +57,7 @@ void Server::Run(const std::string& address,
   }
 
   srt_setsockflag(srt_sock, SRTO_RCVSYN, &no, sizeof yes);
+  srt_setsockflag(srt_sock, SRTO_SNDSYN, &no, sizeof yes);
   srt_setsockflag(srt_sock, SRTO_STREAMID, &yes, sizeof yes);
   if (latency_ms >= 0) {
     if (srt_setsockflag(srt_sock, SRTO_LATENCY, &latency_ms, sizeof latency_ms) == SRT_ERROR) {
@@ -82,6 +85,12 @@ void Server::Run(const std::string& address,
 
   if (udp_sndbuf >= 0) {
     if (srt_setsockflag(srt_sock, SRTO_UDP_SNDBUF, &udp_sndbuf, sizeof udp_sndbuf) == SRT_ERROR) {
+      throw std::runtime_error(std::string(srt_getlasterror_str()));
+    }
+  }
+
+  if (sndtimeo >= 0) {
+    if (srt_setsockflag(srt_sock, SRTO_SNDTIMEO, &sndtimeo, sizeof sndtimeo) == SRT_ERROR) {
       throw std::runtime_error(std::string(srt_getlasterror_str()));
     }
   }
@@ -234,12 +243,18 @@ int Server::OnNewConnection(SRTSOCKET ns,
     address = ip;
   }
 
+  int no = 0;
+  srt_setsockflag(ns, SRTO_SNDSYN, &no, sizeof no);
+
   // Set password if provided
   if (!password.empty()) {
     srt_setsockflag(ns, SRTO_PASSPHRASE, password.c_str(), password.length());
   }
   if (latency_ms >= 0) {
     srt_setsockflag(ns, SRTO_LATENCY, &latency_ms, sizeof latency_ms);
+  }
+  if (sndtimeo >= 0) {
+    srt_setsockflag(ns, SRTO_SNDTIMEO, &sndtimeo, sizeof sndtimeo);
   }
 
   std::unique_lock<std::mutex> lock(accept_mutex);

@@ -33,7 +33,8 @@ public:
            int rcvbuf = -1,
            int udp_rcvbuf = -1,
            int sndbuf = -1,
-           int udp_sndbuf = -1);
+           int udp_sndbuf = -1,
+           int sndtimeo = -1);
 
   void Stop();
 
@@ -99,6 +100,7 @@ private:
   SrtSocket srt_bind_sock;
   std::string password;
   int latency_ms = -1;
+  int sndtimeo = -1;
 
   std::atomic_bool running;
   SrtEpoll epoll;

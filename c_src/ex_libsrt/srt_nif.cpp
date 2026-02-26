@@ -133,7 +133,8 @@ UNIFEX_TERM start_server(UnifexEnv* env,
                          int rcvbuf,
                          int udp_rcvbuf,
                          int sndbuf,
-                         int udp_sndbuf) {
+                         int udp_sndbuf,
+                         int sndtimeo) {
   State* state = unifex_alloc_state(env);
   state = new (state) State();
 
@@ -194,7 +195,7 @@ UNIFEX_TERM start_server(UnifexEnv* env,
               state->env, state->owner, 1, address.c_str(), stream_id.c_str());
         });
 
-    state->server->Run(std::string(address), port, std::string(password), latency_ms, rcvbuf, udp_rcvbuf, sndbuf, udp_sndbuf);
+    state->server->Run(std::string(address), port, std::string(password), latency_ms, rcvbuf, udp_rcvbuf, sndbuf, udp_sndbuf, sndtimeo);
 
     UNIFEX_TERM result = start_server_result_ok(env, state);
     unifex_release_state(env, state);
