@@ -8,7 +8,9 @@ Mix.Task.run("app.start")
       payload: :integer,
       port: :integer,
       latency: :integer,
-      sndtimeo: :integer
+      sndtimeo: :integer,
+      batch: :integer,
+      mode: :string
     ]
   )
 
@@ -18,9 +20,19 @@ payload_size = Keyword.get(opts, :payload, 1316)
 port = Keyword.get(opts, :port, 19_000 + :rand.uniform(2000))
 latency_ms = Keyword.get(opts, :latency, 120)
 sndtimeo = Keyword.get(opts, :sndtimeo, -1)
+mode = Keyword.get(opts, :mode, "single")
+batch_size = Keyword.get(opts, :batch, 8)
 
 if payload_size <= 0 or payload_size > 1316 do
   raise "payload must be in 1..1316"
+end
+
+if mode not in ["single", "many"] do
+  raise "mode must be single|many"
+end
+
+if batch_size <= 0 or batch_size > 32 do
+  raise "batch must be in 1..32"
 end
 
 parent = self()
@@ -92,10 +104,11 @@ for _ <- 1..clients do
     {:srt_server_connect_request, _address, _stream_id} ->
       :ok = ExLibSRT.Server.accept_awaiting_connect_request(server)
 
-    other ->
-      IO.puts("[bench] ignoring message while awaiting connect request: #{inspect(other)}")
-      :timer.sleep(10)
-      send(self(), other)
+    {:srt_server_send_telemetry, _q, _d, _r, _bps} ->
+      :ok
+
+    _other ->
+      :ok
   after
     10_000 -> raise "timed out waiting for connect request"
   end
@@ -106,6 +119,9 @@ conn_ids =
     receive do
       {:srt_server_conn, conn_id, _stream_id} ->
         {:cont, [conn_id | acc]}
+
+      {:srt_server_send_telemetry, _q, _d, _r, _bps} ->
+        {:cont, acc}
 
       _other ->
         {:cont, acc}
@@ -120,8 +136,8 @@ if length(conn_ids) != clients do
 end
 
 payload = :binary.copy(<<0>>, payload_size)
+batch_payloads = List.duplicate(payload, batch_size)
 deadline_ms = System.monotonic_time(:millisecond) + duration_s * 1000
-
 sender_parent = self()
 
 for conn_id <- conn_ids do
@@ -132,9 +148,17 @@ for conn_id <- conn_ids do
       if now >= deadline_ms do
         send(sender_parent, {:sender_done, self()})
       else
-        case ExLibSRT.Server.send_data(conn_id, payload, server) do
+        result =
+          if mode == "many" do
+            ExLibSRT.Server.send_data_many(conn_id, batch_payloads, server)
+          else
+            ExLibSRT.Server.send_data(conn_id, payload, server)
+          end
+
+        case result do
           :ok ->
-            :atomics.add_get(send_bytes, 1, payload_size)
+            sent_now = if mode == "many", do: payload_size * batch_size, else: payload_size
+            :atomics.add_get(send_bytes, 1, sent_now)
 
           {:error, _reason} ->
             :atomics.add_get(send_errors, 1, 1)
@@ -152,7 +176,7 @@ for _ <- 1..clients do
   receive do
     {:sender_done, _pid} -> :ok
   after
-    duration_s * 2000 -> raise "timed out waiting for sender"
+    duration_s * 3000 -> raise "timed out waiting for sender"
   end
 end
 
@@ -174,6 +198,19 @@ for _ <- receivers do
   end
 end
 
+telemetry_samples =
+  Stream.repeatedly(fn ->
+    receive do
+      {:srt_server_send_telemetry, queue_depth, enqueue_drops, send_retries, drain_rate_bps} ->
+        {:ok, {queue_depth, enqueue_drops, send_retries, drain_rate_bps}}
+    after
+      0 ->
+        :done
+    end
+  end)
+  |> Enum.take_while(&(&1 != :done))
+  |> Enum.map(fn {:ok, sample} -> sample end)
+
 ExLibSRT.Server.stop(server)
 
 sent = :atomics.get(send_bytes, 1)
@@ -187,18 +224,40 @@ sum = fn fun -> Enum.reduce(stats, 0, fn st, acc -> acc + fun.(st) end) end
 
 pkt_snd_drop = sum.(fn st -> st.pktSndDrop end)
 pkt_retrans = sum.(fn st -> st.pktRetrans end)
+
 mbps_send_rate_avg =
   case stats do
     [] -> 0.0
     list -> Enum.reduce(list, 0.0, fn st, acc -> acc + st.mbpsSendRate end) / length(list)
   end
 
+{queue_depth_max, enqueue_drops_last, send_retries_last, drain_rate_bps_avg} =
+  case telemetry_samples do
+    [] ->
+      {0, 0, 0, 0}
+
+    samples ->
+      qmax = samples |> Enum.map(&elem(&1, 0)) |> Enum.max()
+      dlast = samples |> List.last() |> elem(1)
+      rlast = samples |> List.last() |> elem(2)
+      bavg =
+        samples
+        |> Enum.map(&elem(&1, 3))
+        |> Enum.sum()
+        |> Kernel./(length(samples))
+        |> round()
+
+      {qmax, dlast, rlast, bavg}
+  end
+
 IO.puts(
   "RESULT " <>
-    "duration_s=#{duration_s} clients=#{clients} payload=#{payload_size} sndtimeo=#{sndtimeo} " <>
+    "mode=#{mode} batch=#{batch_size} duration_s=#{duration_s} clients=#{clients} payload=#{payload_size} sndtimeo=#{sndtimeo} " <>
     "sent_bytes=#{sent} recv_bytes=#{recv} send_errors=#{errors} " <>
     "send_mbps=#{:erlang.float_to_binary(send_mbps, decimals: 3)} " <>
     "recv_mbps=#{:erlang.float_to_binary(recv_mbps, decimals: 3)} " <>
     "srt_mbps_send_rate=#{:erlang.float_to_binary(mbps_send_rate_avg, decimals: 3)} " <>
-    "pkt_snd_drop=#{pkt_snd_drop} pkt_retrans=#{pkt_retrans}"
+    "pkt_snd_drop=#{pkt_snd_drop} pkt_retrans=#{pkt_retrans} " <>
+    "queue_depth_max=#{queue_depth_max} enqueue_drops=#{enqueue_drops_last} " <>
+    "send_retries=#{send_retries_last} drain_rate_bps_avg=#{drain_rate_bps_avg}"
 )
