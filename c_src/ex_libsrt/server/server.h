@@ -13,6 +13,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 #include "../common/srt_socket_stats.h"
 
@@ -32,6 +33,11 @@ class Server {
     uint64_t enqueue_drops = 0;
     uint64_t send_retries = 0;
     uint64_t drain_rate_bps = 0;
+  };
+
+  struct PendingMessage {
+    std::unique_ptr<char[]> data;
+    int len;
   };
 
   enum class EnqueueResult {
@@ -72,6 +78,10 @@ class Server {
                             std::unique_ptr<char[]> data,
                             int len);
 
+  EnqueueResult EnqueueBatchData(SrtSocket connection_id,
+                                 std::vector<PendingMessage>&& messages,
+                                 uint64_t total_bytes);
+
   void SetOnSocketConnected(
       std::function<void(SrtSocket, const std::string&)> on_socket_connected) {
     this->on_socket_connected = std::move(on_socket_connected);
@@ -103,11 +113,6 @@ class Server {
   }
 
  private:
-  struct PendingMessage {
-    std::unique_ptr<char[]> data;
-    int len;
-  };
-
   struct ConnectionQueue {
     std::deque<PendingMessage> queue;
     uint64_t queued_bytes = 0;

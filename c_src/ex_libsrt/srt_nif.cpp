@@ -323,6 +323,10 @@ send_server_data_many(UnifexEnv* env,
     return send_server_data_many_result_error(env, "Server is not active");
   }
 
+  std::vector<Server::PendingMessage> messages;
+  messages.reserve(16);
+
+  uint64_t total_bytes = 0;
   size_t offset = 0;
   while (offset + 2 <= payload->size) {
     uint16_t len = (static_cast<uint16_t>(payload->data[offset]) << 8) |
@@ -337,29 +341,28 @@ send_server_data_many(UnifexEnv* env,
     memcpy(buffer.get(), payload->data + offset, len);
     offset += len;
 
-    auto result = state->server->EnqueueData(conn_id, std::move(buffer), len);
-    if (result == Server::EnqueueResult::Ok) {
-      continue;
-    }
-
-    switch (result) {
-      case Server::EnqueueResult::WouldBlock:
-        return send_server_data_many_result_error(env, "would_block");
-      case Server::EnqueueResult::SocketNotFound:
-        return send_server_data_many_result_error(env, "Socket not found");
-      case Server::EnqueueResult::SocketClosed:
-        return send_server_data_many_result_error(env, "Socket is closed or broken");
-      case Server::EnqueueResult::InvalidPayload:
-      default:
-        return send_server_data_many_result_error(env, "Invalid payload");
-    }
+    total_bytes += static_cast<uint64_t>(len);
+    messages.push_back(Server::PendingMessage{std::move(buffer), len});
   }
 
-  if (offset != payload->size) {
+  if (offset != payload->size || messages.empty()) {
     return send_server_data_many_result_error(env, "Invalid batch payload");
   }
 
-  return send_server_data_many_result_ok(env);
+  auto result = state->server->EnqueueBatchData(conn_id, std::move(messages), total_bytes);
+  switch (result) {
+    case Server::EnqueueResult::Ok:
+      return send_server_data_many_result_ok(env);
+    case Server::EnqueueResult::WouldBlock:
+      return send_server_data_many_result_error(env, "would_block");
+    case Server::EnqueueResult::SocketNotFound:
+      return send_server_data_many_result_error(env, "Socket not found");
+    case Server::EnqueueResult::SocketClosed:
+      return send_server_data_many_result_error(env, "Socket is closed or broken");
+    case Server::EnqueueResult::InvalidPayload:
+    default:
+      return send_server_data_many_result_error(env, "Invalid payload");
+  }
 }
 
 UNIFEX_TERM start_client_native(UnifexEnv* env,

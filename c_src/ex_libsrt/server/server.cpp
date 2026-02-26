@@ -189,6 +189,20 @@ Server::EnqueueResult Server::EnqueueData(SrtSocket connection_id,
     return EnqueueResult::InvalidPayload;
   }
 
+  std::vector<PendingMessage> messages;
+  messages.push_back(PendingMessage{std::move(data), len});
+  return EnqueueBatchData(connection_id, std::move(messages),
+                          static_cast<uint64_t>(len));
+}
+
+Server::EnqueueResult Server::EnqueueBatchData(
+    SrtSocket connection_id,
+    std::vector<PendingMessage>&& messages,
+    uint64_t total_bytes) {
+  if (messages.empty() || total_bytes == 0) {
+    return EnqueueResult::InvalidPayload;
+  }
+
   if (!running.load()) {
     return EnqueueResult::SocketClosed;
   }
@@ -200,16 +214,18 @@ Server::EnqueueResult Server::EnqueueData(SrtSocket connection_id,
   }
 
   auto& q = it->second;
-  if (q.queue.size() >= max_pending_messages_per_conn ||
-      q.queued_bytes + static_cast<uint64_t>(len) >
-          max_pending_bytes_per_conn) {
+  if (q.queue.size() + messages.size() > max_pending_messages_per_conn ||
+      q.queued_bytes + total_bytes > max_pending_bytes_per_conn) {
     telemetry_enqueue_drops.fetch_add(1);
     return EnqueueResult::WouldBlock;
   }
 
-  q.queue.push_back(PendingMessage{std::move(data), len});
-  q.queued_bytes += static_cast<uint64_t>(len);
-  telemetry_queue_depth_bytes.fetch_add(static_cast<uint64_t>(len));
+  for (auto& msg : messages) {
+    q.queue.push_back(std::move(msg));
+  }
+
+  q.queued_bytes += total_bytes;
+  telemetry_queue_depth_bytes.fetch_add(total_bytes);
 
   if (!q.out_enabled) {
     const int write_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
