@@ -1,4 +1,5 @@
 #include "srt_nif.h"
+#include <cstdint>
 #include <cstdlib>
 #include <thread>
 #include <vector>
@@ -195,6 +196,16 @@ UNIFEX_TERM start_server(UnifexEnv* env,
               state->env, state->owner, 1, address.c_str(), stream_id.c_str());
         });
 
+    state->server->SetOnSendTelemetry([=](const Server::SendTelemetry& telemetry) {
+      send_srt_server_send_telemetry(state->env,
+                                     state->owner,
+                                     1,
+                                     telemetry.queue_depth_bytes,
+                                     telemetry.enqueue_drops,
+                                     telemetry.send_retries,
+                                     telemetry.drain_rate_bps);
+    });
+
     state->server->Run(std::string(address), port, std::string(password), latency_ms, rcvbuf, udp_rcvbuf, sndbuf, udp_sndbuf, sndtimeo);
 
     UNIFEX_TERM result = start_server_result_ok(env, state);
@@ -284,28 +295,71 @@ send_server_data(UnifexEnv* env,
     return send_server_data_result_error(env, "Server is not active");
   }
 
-  {
-    std::shared_lock lock(state->conn_receivers_mutex);
+  auto buffer = std::unique_ptr<char[]>(new char[payload->size]);
+  memcpy(buffer.get(), payload->data, payload->size);
 
-    if (state->conn_receivers.find(conn_id) == std::end(state->conn_receivers)) {
+  auto result = state->server->EnqueueData(conn_id, std::move(buffer), payload->size);
+  switch (result) {
+    case Server::EnqueueResult::Ok:
+      return send_server_data_result_ok(env);
+    case Server::EnqueueResult::WouldBlock:
+      return send_server_data_result_error(env, "would_block");
+    case Server::EnqueueResult::SocketNotFound:
       return send_server_data_result_error(env, "Socket not found");
-    }
-  }
-
-  auto result =
-      srt_sendmsg(conn_id, reinterpret_cast<const char*>(payload->data), payload->size, -1, 0);
-
-  if (result == SRT_ERROR) {
-    auto socket_state = srt_getsockstate(conn_id);
-
-    if (socket_state == SRTS_CLOSED || socket_state == SRTS_BROKEN) {
+    case Server::EnqueueResult::SocketClosed:
       return send_server_data_result_error(env, "Socket is closed or broken");
-    }
+    case Server::EnqueueResult::InvalidPayload:
+    default:
+      return send_server_data_result_error(env, "Invalid payload");
+  }
+}
 
-    return send_server_data_result_error(env, srt_getlasterror_str());
+UNIFEX_TERM
+send_server_data_many(UnifexEnv* env,
+                      int conn_id,
+                      UnifexPayload* payload,
+                      UnifexState* state) {
+  if (state->server == nullptr) {
+    return send_server_data_many_result_error(env, "Server is not active");
   }
 
-  return send_server_data_result_ok(env);
+  size_t offset = 0;
+  while (offset + 2 <= payload->size) {
+    uint16_t len = (static_cast<uint16_t>(payload->data[offset]) << 8) |
+                   static_cast<uint16_t>(payload->data[offset + 1]);
+    offset += 2;
+
+    if (len == 0 || offset + len > payload->size) {
+      return send_server_data_many_result_error(env, "Invalid batch payload");
+    }
+
+    auto buffer = std::unique_ptr<char[]>(new char[len]);
+    memcpy(buffer.get(), payload->data + offset, len);
+    offset += len;
+
+    auto result = state->server->EnqueueData(conn_id, std::move(buffer), len);
+    if (result == Server::EnqueueResult::Ok) {
+      continue;
+    }
+
+    switch (result) {
+      case Server::EnqueueResult::WouldBlock:
+        return send_server_data_many_result_error(env, "would_block");
+      case Server::EnqueueResult::SocketNotFound:
+        return send_server_data_many_result_error(env, "Socket not found");
+      case Server::EnqueueResult::SocketClosed:
+        return send_server_data_many_result_error(env, "Socket is closed or broken");
+      case Server::EnqueueResult::InvalidPayload:
+      default:
+        return send_server_data_many_result_error(env, "Invalid payload");
+    }
+  }
+
+  if (offset != payload->size) {
+    return send_server_data_many_result_error(env, "Invalid batch payload");
+  }
+
+  return send_server_data_many_result_ok(env);
 }
 
 UNIFEX_TERM start_client_native(UnifexEnv* env,

@@ -30,6 +30,7 @@ defmodule ExLibSRT.Server do
   * `t:srt_data/0` - server has received new data on a client connection
   * `t:srt_server_connect_request/0` - server has triggered a new connection request
     (see `accept_awaiting_connect_request/1` and `reject_awaiting_connect_request/1` for answering the request)
+  * `t:srt_server_send_telemetry/0` - queue depth / drops / retries / drain rate from native sender worker
 
   ### Accepting connections
   Each SRT connection can carry a `streamid` string which can be used for identifying the stream.
@@ -62,6 +63,10 @@ defmodule ExLibSRT.Server do
   @type srt_data :: {:srt_data, connection_id(), data :: binary()}
   @type srt_server_connect_request ::
           {:srt_server_connect_request, address :: String.t(), stream_id :: String.t()}
+
+  @type srt_server_send_telemetry ::
+          {:srt_server_send_telemetry, non_neg_integer(), non_neg_integer(), non_neg_integer(),
+           non_neg_integer()}
 
   @type start_opt ::
           {:password, String.t()}
@@ -227,7 +232,7 @@ defmodule ExLibSRT.Server do
   Sends data through a server connection.
   """
   @spec send_data(connection_id(), binary(), t()) ::
-          :ok | {:error, :payload_too_large | (reason :: String.t())}
+          :ok | {:error, :payload_too_large | :would_block | (reason :: String.t())}
   def send_data(connection_id, payload, agent)
 
   def send_data(_connection_id, payload, _agent) when byte_size(payload) > @max_payload_size,
@@ -236,9 +241,49 @@ defmodule ExLibSRT.Server do
   def send_data(connection_id, payload, agent) do
     if Process.alive?(agent) do
       server_ref = Agent.get(agent, & &1)
-      ExLibSRT.Native.send_server_data(connection_id, payload, server_ref)
+
+      connection_id
+      |> ExLibSRT.Native.send_server_data(payload, server_ref)
+      |> map_send_error()
     else
       {:error, "Server is not active"}
+    end
+  end
+
+  @doc """
+  Sends many payloads through a server connection using one NIF call.
+
+  This reduces BEAM↔NIF crossing overhead on hot sender paths.
+  """
+  @spec send_data_many(connection_id(), [binary()], t()) ::
+          :ok | {:error, :payload_too_large | :would_block | (reason :: String.t())}
+  def send_data_many(connection_id, payloads, agent)
+
+  def send_data_many(_connection_id, payloads, _agent) when not is_list(payloads),
+    do: {:error, "payloads must be a list of binaries"}
+
+  def send_data_many(connection_id, payloads, agent) do
+    cond do
+      not Enum.all?(payloads, &is_binary/1) ->
+        {:error, "payloads must be a list of binaries"}
+
+      Enum.any?(payloads, &(byte_size(&1) > @max_payload_size)) ->
+        {:error, :payload_too_large}
+
+      Process.alive?(agent) ->
+        server_ref = Agent.get(agent, & &1)
+
+        framed =
+          Enum.reduce(payloads, <<>>, fn payload, acc ->
+            <<acc::binary, byte_size(payload)::16-big-unsigned-integer, payload::binary>>
+          end)
+
+        connection_id
+        |> ExLibSRT.Native.send_server_data_many(framed, server_ref)
+        |> map_send_error()
+
+      true ->
+        {:error, "Server is not active"}
     end
   end
 
@@ -351,6 +396,9 @@ defmodule ExLibSRT.Server do
         {:error, ":sndtimeo must be a non-negative integer, got: #{inspect(val)}"}
     end
   end
+
+  defp map_send_error({:error, "would_block"}), do: {:error, :would_block}
+  defp map_send_error(other), do: other
 
   @spec validate_password(String.t()) :: :ok | {:error, String.t()}
   defp validate_password(""), do: :ok

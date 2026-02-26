@@ -75,6 +75,8 @@ spec close_server_connection(conn_id :: int, state) :: (:ok :: label) | {:error 
 
 spec send_server_data(conn_id :: int, data :: payload, state) :: (:ok :: label) | {:error :: label, reason :: string}
 
+spec send_server_data_many(conn_id :: int, data :: payload, state) :: (:ok :: label) | {:error :: label, reason :: string}
+
 spec stop_server(state) :: (:ok :: label) | {:error :: label, reason :: string}
 
 spec start_client_native(server_address :: string, port :: int, stream_id :: string, password :: string, latency_ms :: int, sender_mode :: int, rcvbuf :: int, udp_rcvbuf :: int, sndbuf :: int, udp_sndbuf :: int) :: {:ok :: label, state} | {:error :: label, reason :: string, code :: int}
@@ -90,6 +92,7 @@ sends {:srt_server_conn_closed:: label, conn :: int}
 sends {:srt_server_error :: label, conn :: int, error :: string}
 sends {:srt_data :: label, conn :: int, data :: payload}
 sends {:srt_server_connect_request :: label, address :: string, stream_id :: string}
+sends {:srt_server_send_telemetry :: label, queue_depth_bytes :: uint64, enqueue_drops :: uint64, send_retries :: uint64, drain_rate_bps :: uint64}
 
 sends :srt_client_connected :: label
 sends :srt_client_disconnected :: label
@@ -99,6 +102,7 @@ dirty :io,
   start_server: 9,
   close_server_connection: 2,
   send_server_data: 3,
+  send_server_data_many: 3,
   stop_server: 1,
   start_client_native: 10,
   send_client_data: 2,
