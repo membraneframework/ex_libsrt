@@ -61,16 +61,16 @@ defmodule ExLibSRT.ServerTest do
 
       assert_receive {:srt_server_conn, conn_id, _stream_id}, 1_000
 
+      expected = Enum.map_join(1..10, fn i -> "Hello world! (#{i})" end)
+
       for i <- 1..10 do
         :ok = Transmit.send_payload(stream, "Hello world! (#{i})")
       end
 
       :ok = Transmit.close_stream(stream)
 
-      for i <- 1..10 do
-        assert_receive {:srt_data, ^conn_id, payload}, 500
-        assert payload == "Hello world! (#{i})"
-      end
+      received = collect_srt_data(conn_id, byte_size(expected), 2_000)
+      assert received == expected
 
       Transmit.stop_proxy(proxy)
     end
@@ -187,12 +187,14 @@ defmodule ExLibSRT.ServerTest do
       on_exit(fn -> close_stream_safe(stream) end)
 
       payload = :crypto.strong_rand_bytes(100)
+      expected = String.duplicate(payload, 10)
 
       for _i <- 1..10 do
         :ok = Transmit.send_payload(stream, payload)
-
-        assert_receive {:srt_data, ^conn_id, ^payload}, 1_000
       end
+
+      received = collect_srt_data(conn_id, byte_size(expected), 2_000)
+      assert received == expected
 
       assert {:ok, stats} = Server.read_socket_stats(conn_id, ctx.server)
 
@@ -256,16 +258,16 @@ defmodule ExLibSRT.ServerTest do
       refute_receive {:srt_server_conn, _conn_id, _stream_id}, 1_000
       assert_receive {:srt_handler_connected, _conn_id, _stream_id}, 1_000
 
+      expected = Enum.map_join(1..10, fn i -> "Hello world! (#{i})" end)
+
       for i <- 1..10 do
         :ok = Transmit.send_payload(stream, "Hello world! (#{i})")
       end
 
       :ok = Transmit.close_stream(stream)
 
-      for i <- 1..10 do
-        assert_receive {:srt_handler_data, payload}, 500
-        assert payload == "Hello world! (#{i})"
-      end
+      received = collect_handler_data(byte_size(expected), 2_000)
+      assert received == expected
 
       Transmit.stop_proxy(proxy)
 
@@ -336,6 +338,51 @@ defmodule ExLibSRT.ServerTest do
   defp close_stream_safe(socket) do
     if is_port(socket) and :erlang.port_info(socket) != nil do
       :ok = Transmit.close_stream(socket)
+    end
+  end
+
+  # Collect coalesced {:srt_data, conn_id, payload} messages until we have
+  # at least `expected_bytes` bytes or `timeout_ms` elapses.
+  defp collect_srt_data(conn_id, expected_bytes, timeout_ms) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    do_collect_srt_data(conn_id, [], 0, expected_bytes, deadline)
+  end
+
+  defp do_collect_srt_data(_conn_id, acc, collected, expected, _deadline) when collected >= expected do
+    IO.iodata_to_binary(Enum.reverse(acc))
+  end
+
+  defp do_collect_srt_data(conn_id, acc, collected, expected, deadline) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {:srt_data, ^conn_id, payload} ->
+        do_collect_srt_data(conn_id, [payload | acc], collected + byte_size(payload), expected, deadline)
+    after
+      remaining ->
+        flunk("Timed out waiting for srt_data: got #{collected}/#{expected} bytes")
+    end
+  end
+
+  # Same for {:srt_handler_data, payload} messages from Connection.Handler.
+  defp collect_handler_data(expected_bytes, timeout_ms) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    do_collect_handler_data([], 0, expected_bytes, deadline)
+  end
+
+  defp do_collect_handler_data(acc, collected, expected, _deadline) when collected >= expected do
+    IO.iodata_to_binary(Enum.reverse(acc))
+  end
+
+  defp do_collect_handler_data(acc, collected, expected, deadline) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {:srt_handler_data, payload} ->
+        do_collect_handler_data([payload | acc], collected + byte_size(payload), expected, deadline)
+    after
+      remaining ->
+        flunk("Timed out waiting for srt_handler_data: got #{collected}/#{expected} bytes")
     end
   end
 end

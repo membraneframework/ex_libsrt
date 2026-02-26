@@ -267,16 +267,18 @@ void Client::RunEpoll() {
         }
 
         if (!sender_mode && socket_state == SRTS_CONNECTED) {
-          // Drain up to max_read_per_cycle packets per epoll cycle
-          // to deplete the SRT receive buffer before returning to
-          // epoll_wait.  Mirrors srt-live-transmit's batched-read
-          // strategy.  Each packet is delivered as its own callback
-          // to preserve per-message semantics for consumers.
-          bool got_any = false;
+          // Drain up to max_read_per_cycle packets per epoll cycle,
+          // coalescing into a single buffer to minimize NIF→BEAM
+          // crossings.  Mirrors srt-live-transmit's batched-read
+          // strategy ("deplete read buffers as much as possible on
+          // each read event").
+          char batch_buf[max_read_per_cycle * 1500];
+          int  batch_len = 0;
 
           for (int i = 0; i < max_read_per_cycle; ++i) {
-            char buffer[1500];
-            int bytes_read = srt_recv(read_socket, buffer, sizeof(buffer));
+            int bytes_read = srt_recv(read_socket,
+                                      batch_buf + batch_len,
+                                      sizeof(batch_buf) - batch_len);
 
             if (bytes_read == SRT_ERROR) {
               if (srt_getlasterror(nullptr) == SRT_EASYNCRCV) {
@@ -299,14 +301,10 @@ void Client::RunEpoll() {
               break;
             }
 
-            got_any = true;
-
-            if (on_socket_data) {
-              on_socket_data(buffer, bytes_read);
-            }
+            batch_len += bytes_read;
           }
 
-          if (!got_any) {
+          if (batch_len == 0) {
             // No data despite read-ready — connection lost.
             running.store(false);
             send_cv.notify_all();
@@ -316,6 +314,10 @@ void Client::RunEpoll() {
             }
 
             return;
+          }
+
+          if (on_socket_data) {
+            on_socket_data(batch_buf, batch_len);
           }
         }
       }

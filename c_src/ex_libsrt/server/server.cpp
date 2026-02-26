@@ -297,18 +297,19 @@ void Server::DisconnectSocket(Server::SrtSocket socket) {
 
 void Server::ReadSocketData(Server::SrtSocket socket) {
   static constexpr int max_read_per_cycle = 20;
-  bool got_any = false;
+  char batch_buf[max_read_per_cycle * 1500];
+  int  batch_len = 0;
 
   for (int i = 0; i < max_read_per_cycle; ++i) {
-    char buffer[1500];
-    int n = srt_recv(socket, buffer, sizeof(buffer));
+    int n = srt_recv(socket, batch_buf + batch_len,
+                     sizeof(batch_buf) - batch_len);
 
     if (n == SRT_ERROR) {
       if (srt_getlasterror(nullptr) == SRT_EASYNCRCV) {
         break;
       }
 
-      if (!got_any) {
+      if (batch_len == 0) {
         DisconnectSocket(socket);
         return;
       }
@@ -320,12 +321,13 @@ void Server::ReadSocketData(Server::SrtSocket socket) {
       break;
     }
 
-    got_any = true;
-    this->on_socket_data(socket, buffer, n);
+    batch_len += n;
   }
 
-  if (!got_any) {
+  if (batch_len == 0) {
     DisconnectSocket(socket);
+  } else {
+    this->on_socket_data(socket, batch_buf, batch_len);
   }
 }
 
