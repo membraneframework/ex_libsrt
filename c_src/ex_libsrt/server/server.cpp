@@ -58,6 +58,12 @@ void Server::Run(const std::string& address,
     }
   }
 
+  if (!password.empty()) {
+    if (srt_setsockflag(srt_sock, SRTO_PASSPHRASE, password.c_str(), password.length()) == SRT_ERROR) {
+      throw std::runtime_error(std::string(srt_getlasterror_str()));
+    }
+  }
+
   srt_bind_sock = srt_bind(srt_sock, reinterpret_cast<struct sockaddr*>(&ss), ss_len);
   if (srt_bind_sock == SRT_ERROR) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
@@ -206,10 +212,6 @@ int Server::OnNewConnection(SRTSOCKET ns,
     address = ip;
   }
 
-  // Set password if provided
-  if (!password.empty()) {
-    srt_setsockflag(ns, SRTO_PASSPHRASE, password.c_str(), password.length());
-  }
   if (latency_ms >= 0) {
     srt_setsockflag(ns, SRTO_LATENCY, &latency_ms, sizeof latency_ms);
   }
