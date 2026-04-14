@@ -136,7 +136,7 @@ UNIFEX_TERM start_server(UnifexEnv* env,
   try {
     state->env = unifex_alloc_env(env);
     if (!unifex_self(env, &state->owner)) {
-      throw new std::runtime_error("failed to create native state");
+      throw std::runtime_error("failed to create native state");
     };
 
     state->server = std::make_unique<Server>();
@@ -283,7 +283,7 @@ start_client(UnifexEnv* env,
   try {
     state->env = unifex_alloc_env(env);
     if (!unifex_self(env, &state->owner)) {
-      throw new std::runtime_error("failed to create native state");
+      throw std::runtime_error("failed to create native state");
     };
 
     state->client = std::make_unique<Client>(10, 200);

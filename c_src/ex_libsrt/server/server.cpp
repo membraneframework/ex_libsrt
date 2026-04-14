@@ -285,7 +285,7 @@ void Server::AcceptConnection() {
 
   int socket = srt_accept(srt_sock, (struct sockaddr*)&their_addr, &addr_len);
   if (socket == -1) {
-    throw new std::runtime_error("Failed to accept new socket");
+    throw std::runtime_error("Failed to accept new socket");
   }
 
   char raw_streamid[512] = {0};
