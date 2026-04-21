@@ -3,15 +3,16 @@ defmodule ExLibSRT.Server do
   Implementation of the SRT server.
 
   ## API
-  The client API consinsts of the following functions:
+  The server API consists of the following functions:
 
   * `start/2` - starts the server
-  * `start/3` - starts the server with password authentication
+  * `start/5` - starts the server with password authentication, latency and stream ID whitelist
   * `start_link/2` - starts the server and links to current process
-  * `start_link/3` - starts the server with password authentication and links to current process
-  * `start_link/4` - starts the server with password authentication, sets SRT latency and links to current process
+  * `start_link/5` - starts the server with password authentication, latency and stream ID whitelist, links to current process
   * `stop/1` - stops the server
   * `close_server_connection/2` - stops server's connection to given client
+  * `add_stream_id_to_whitelist/3` - adds a stream ID to the server's whitelist at runtime
+  * `remove_stream_id_from_whitelist/2` - removes a stream ID from the server's whitelist at runtime
 
   ## Password Authentication
 
@@ -28,15 +29,17 @@ defmodule ExLibSRT.Server do
 
   ### Accepting connections
   Each SRT connection can carry a `streamid` string which can be used for identifying the stream.
+  The server only accepts connections whose `streamid` is present in the whitelist. For each
+  whitelisted stream ID a receiver process must be provided — this is the process that will
+  receive `t:srt_server_conn/0`, `t:srt_data/0`, and `t:srt_server_conn_closed/0` messages for
+  that stream.
 
-  When user rejects the stream, the server respons with `1403` rejection code (SRT wise). While not being to accept in time
-  results in `1504` (not that the codes respectively are the same of HTTP 403 forbidden and 504 gateway timeout).
+  The whitelist can be supplied up-front via the `allowed_stream_id_with_receiver_list` argument
+  of `start/5` / `start_link/5`, and modified at runtime with `add_stream_id_to_whitelist/3` and
+  `remove_stream_id_from_whitelist/2`.
 
-  > #### Response timeout {: .warning}
-  >
-  > It is very important to answer the connection request as fast as possible.
-  > Due to how `libsrt` works, while the server waits for the response it blocks the receiving thread
-  > and potentially interrupts other ongoing connections.
+  When a client connects with a stream ID that is not on the whitelist, the server responds with
+  rejection code `1403` (analogous to HTTP 403 Forbidden).
   """
 
   use Agent
@@ -65,7 +68,7 @@ defmodule ExLibSRT.Server do
           port :: non_neg_integer(),
           password :: String.t(),
           latency_ms :: integer(),
-          allowed_stream_id_with_receiver_list :: [String.t()]
+          allowed_stream_id_with_receiver_list :: [{String.t(), pid()}]
         ) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
   def start_link(
@@ -153,7 +156,14 @@ defmodule ExLibSRT.Server do
     result
   end
 
-  @spec add_stream_id_to_whitelist(t(), String.t()) :: :ok | {:error, reason :: String.t()}
+  @doc """
+  Adds a stream ID to the server's whitelist at runtime.
+
+  The `receiver` process will receive connection and data messages for this stream ID.
+  Defaults to `self()` when not provided.
+  """
+  @spec add_stream_id_to_whitelist(t(), String.t(), pid() | nil) ::
+          :ok | {:error, reason :: String.t()}
   def add_stream_id_to_whitelist(agent, stream_id, receiver \\ nil) do
     receiver = receiver || self()
 
@@ -165,6 +175,11 @@ defmodule ExLibSRT.Server do
     end
   end
 
+  @doc """
+  Removes a stream ID from the server's whitelist at runtime.
+
+  After removal, new connections carrying that stream ID will be rejected.
+  """
   @spec remove_stream_id_from_whitelist(t(), String.t()) :: :ok | {:error, reason :: String.t()}
   def remove_stream_id_from_whitelist(agent, stream_id) do
     if Process.alive?(agent) do

@@ -11,7 +11,7 @@ defmodule Server do
 
   @impl true
   def init(_args) do
-    {:ok, server} = ExLibSRT.Server.start("0.0.0.0", 12_000)
+    {:ok, server} = ExLibSRT.Server.start("0.0.0.0", 12_000, "", -1, [{"some_stream_id", self()}])
 
     {:ok, %{server: server, packets: 0}}
   end
