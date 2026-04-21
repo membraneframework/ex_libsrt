@@ -1,16 +1,14 @@
 #pragma once
 
+#include "../common/srt_socket_stats.h"
 #include <atomic>
-#include <condition_variable>
 #include <functional>
 #include <memory>
-#include <mutex>
-#include <optional>
+#include <set>
 #include <srt/srt.h>
 #include <string>
 #include <thread>
-#include <set>
-#include "../common/srt_socket_stats.h"
+#include <unordered_set>
 
 extern "C" {
 #include <arpa/inet.h>
@@ -29,7 +27,8 @@ public:
   void Run(const std::string& address,
            int port,
            const std::string& password = "",
-           int latency_ms = -1);
+           int latency_ms = -1,
+           std::unordered_set<std::string> stream_ids_whitelist = {});
 
   void Stop();
 
@@ -37,9 +36,8 @@ public:
 
   void AnswerConnectRequest(int accept);
 
-  SrtSocket GetAwaitingConnectionRequestId() const { return awaiting_connect_request_socket; }
-
-  std::unique_ptr<SrtSocketStats> ReadSocketStats(int socket, bool clear_intervals);
+  std::unique_ptr<SrtSocketStats> ReadSocketStats(int socket,
+                                                  bool clear_intervals);
 
   void SetOnSocketConnected(
       std::function<void(SrtSocket, const std::string&)> on_socket_connected) {
@@ -61,10 +59,12 @@ public:
     this->on_fatal_error = std::move(on_fatal_error);
   }
 
-  void SetOnConnectRequest(
-      std::function<void(const std::string&, const std::string&)>&&
-          on_connect_request) {
-    this->on_connect_request = std::move(on_connect_request);
+  void AddStreamIdToWhitelist(std::string stream_id) {
+    this->stream_ids_whitelist.insert(stream_id);
+  }
+
+  void RemoveStreamIdFromWhitelist(std::string stream_id) {
+    this->stream_ids_whitelist.erase(stream_id);
   }
 
 private:
@@ -74,8 +74,6 @@ private:
 
   void ReadSocketData(SrtSocket socket);
   void DisconnectSocket(SrtSocket socket);
-
-  void AcceptConnection();
 
   void RunEpoll();
 
@@ -106,11 +104,6 @@ private:
   std::function<void(SrtSocket)> on_socket_disconnected;
   std::function<void(SrtSocket, const char*, int)> on_socket_data;
   std::function<void(const std::string&)> on_fatal_error;
-  std::function<void(const std::string&, const std::string&)>
-      on_connect_request;
 
-  std::mutex accept_mutex;
-  std::condition_variable accept_cv;
-  bool accept_awaiting_stream_id = false;
-  SrtSocket awaiting_connect_request_socket = -1;
+  std::unordered_set<std::string> stream_ids_whitelist = {};
 };

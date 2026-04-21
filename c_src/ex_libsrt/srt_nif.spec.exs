@@ -63,18 +63,17 @@ type srt_socket_stats :: %ExLibSRT.SocketStats{
 callback :load, :on_load
 callback :unload, :on_unload
 
-spec start_server(host :: string, port :: int, password :: string, latency_ms :: int) :: {:ok :: label, state} | {:error :: label, reason :: string}
+spec start_server(host :: string, port :: int, password :: string, latency_ms :: int, stream_ids_whitelist :: [string], receivers :: [pid]) :: {:ok :: label, state} | {:error :: label, reason :: string}
 
-spec accept_awaiting_connect_request(receiver :: pid, state) :: (:ok :: label) | {:error :: label, reason :: string}
+spec add_stream_id_to_whitelist(stream_id :: string, receiver :: pid, state) :: (:ok :: label)
 
-spec reject_awaiting_connect_request(state) :: (:ok :: label) | {:error :: label, reason :: string}
+spec remove_stream_id_from_whitelist(stream_id :: string, state) :: (:ok :: label)
 
 spec read_server_socket_stats(conn_id :: int, state) :: {:ok :: label, stats :: srt_socket_stats} | {:error :: label, reason :: string}
 
 spec close_server_connection(conn_id :: int, state) :: (:ok :: label) | {:error :: label, reason :: string}
 
 spec stop_server(state) :: (:ok :: label) | {:error :: label, reason :: string}
-
 
 spec start_client(server_address :: string, port :: int, stream_id :: string, password :: string, latency_ms :: int) :: {:ok :: label, state} | {:error :: label, reason :: string, code :: int}
 
@@ -88,10 +87,9 @@ sends {:srt_server_conn :: label, conn :: int, stream_id :: string}
 sends {:srt_server_conn_closed:: label, conn :: int}
 sends {:srt_server_error :: label, conn :: int, error :: string}
 sends {:srt_data :: label, conn :: int, data :: payload}
-sends {:srt_server_connect_request :: label, address :: string, stream_id :: string}
 
 sends :srt_client_connected :: label
 sends :srt_client_disconnected :: label
 sends {:srt_client_error :: label, reason :: string}
 
-dirty :io,  start_server: 4, close_server_connection: 2, stop_server: 1, start_client: 5, read_server_socket_stats: 2, read_client_socket_stats: 1
+dirty :io,  start_server: 6, close_server_connection: 2, stop_server: 1, start_client: 5, read_server_socket_stats: 2, read_client_socket_stats: 1

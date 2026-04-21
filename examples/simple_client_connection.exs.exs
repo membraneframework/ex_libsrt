@@ -17,17 +17,6 @@ defmodule Server do
   end
 
   @impl true
-  def handle_info({:srt_server_connect_request, address, stream_id}, state) do
-    Logger.info(
-      "Receiving new connection request with stream id: #{stream_id} from address: #{address}"
-    )
-
-    :ok = ExLibSRT.Server.accept_awaiting_connect_request(state.server)
-
-    {:noreply, state}
-  end
-
-  @impl true
   def handle_info({:srt_server_conn, conn_id, stream_id}, state) do
     Logger.info("Connection established with id: #{conn_id} for stream: #{stream_id}")
 

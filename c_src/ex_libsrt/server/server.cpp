@@ -1,26 +1,27 @@
 #include "server.h"
 
-#include <chrono>
 #include <cstring>
-#include <exception>
 #include <string>
-#include <vector>
 #include <unifex/unifex.h>
+#include <unordered_set>
+#include <vector>
 
 void Server::Run(const std::string& address,
                  int port,
                  const std::string& password,
-                 int latency_ms) {
+                 int latency_ms,
+                 std::unordered_set<std::string> ids_whitelist) {
   this->password = password;
   this->latency_ms = latency_ms;
+  this->stream_ids_whitelist = std::move(ids_whitelist);
 
   struct sockaddr_storage ss;
   socklen_t ss_len;
   int af;
   memset(&ss, 0, sizeof(ss));
 
-  struct sockaddr_in6 *sa6 = reinterpret_cast<struct sockaddr_in6*>(&ss);
-  struct sockaddr_in  *sa4 = reinterpret_cast<struct sockaddr_in*>(&ss);
+  struct sockaddr_in6* sa6 = reinterpret_cast<struct sockaddr_in6*>(&ss);
+  struct sockaddr_in* sa4 = reinterpret_cast<struct sockaddr_in*>(&ss);
 
   if (inet_pton(AF_INET6, address.c_str(), &sa6->sin6_addr) == 1) {
     sa6->sin6_family = AF_INET6;
@@ -45,20 +46,24 @@ void Server::Run(const std::string& address,
   int no = 0;
 
   if (af == AF_INET6) {
-    if (srt_setsockflag(srt_sock, SRTO_IPV6ONLY, &yes, sizeof yes) == SRT_ERROR) {
-        throw std::runtime_error(std::string(srt_getlasterror_str()));
+    if (srt_setsockflag(srt_sock, SRTO_IPV6ONLY, &yes, sizeof yes) ==
+        SRT_ERROR) {
+      throw std::runtime_error(std::string(srt_getlasterror_str()));
     }
   }
 
   srt_setsockflag(srt_sock, SRTO_RCVSYN, &no, sizeof yes);
   srt_setsockflag(srt_sock, SRTO_STREAMID, &yes, sizeof yes);
   if (latency_ms >= 0) {
-    if (srt_setsockflag(srt_sock, SRTO_LATENCY, &latency_ms, sizeof latency_ms) == SRT_ERROR) {
+    if (srt_setsockflag(
+            srt_sock, SRTO_LATENCY, &latency_ms, sizeof latency_ms) ==
+        SRT_ERROR) {
       throw std::runtime_error(std::string(srt_getlasterror_str()));
     }
   }
 
-  srt_bind_sock = srt_bind(srt_sock, reinterpret_cast<struct sockaddr*>(&ss), ss_len);
+  srt_bind_sock =
+      srt_bind(srt_sock, reinterpret_cast<struct sockaddr*>(&ss), ss_len);
   if (srt_bind_sock == SRT_ERROR) {
     throw std::runtime_error(std::string(srt_getlasterror_str()));
   }
@@ -84,7 +89,8 @@ void Server::Run(const std::string& address,
   epoll_loop = std::thread(&Server::RunEpoll, this);
 }
 
-std::unique_ptr<SrtSocketStats> Server::ReadSocketStats(int socket, bool clear_intervals) {
+std::unique_ptr<SrtSocketStats> Server::ReadSocketStats(int socket,
+                                                        bool clear_intervals) {
   if (active_sockets.find(socket) != std::end(active_sockets)) {
     return readSrtSocketStats(socket, clear_intervals);
   }
@@ -103,7 +109,8 @@ void Server::Stop() {
 }
 
 void Server::CloseConnection(int connection_id) {
-  if (auto connection = active_sockets.find(connection_id); connection != std::end(active_sockets)) {
+  if (auto connection = active_sockets.find(connection_id);
+      connection != std::end(active_sockets)) {
     srt_epoll_remove_usock(epoll, connection_id);
     srt_close(connection_id);
 
@@ -113,15 +120,17 @@ void Server::CloseConnection(int connection_id) {
 }
 
 void Server::RunEpoll() {
-  // Setting this one prevents spamming with "no sockets to check, this would deadlock" logs during closing
-  // of the system, when there are no sockets in the epoll anymore
+  // Setting this one prevents spamming with "no sockets to check, this would
+  // deadlock" logs during closing of the system, when there are no sockets in
+  // the epoll anymore
   srt_epoll_set(epoll, SRT_EPOLL_ENABLE_EMPTY);
 
   int sockets_len = 100;
   std::vector<SrtSocket> sockets(static_cast<size_t>(sockets_len));
 
   int broken_sockets_len = 100;
-  std::vector<SrtSocket> broken_sockets(static_cast<size_t>(broken_sockets_len));
+  std::vector<SrtSocket> broken_sockets(
+      static_cast<size_t>(broken_sockets_len));
 
   while (running.load()) {
     sockets_len = 100;
@@ -149,13 +158,15 @@ void Server::RunEpoll() {
       auto socket_state = srt_getsockstate(sockets[i]);
 
       if (socket_state == SRTS_LISTENING) {
-        AcceptConnection();
+        // do nothing
       } else if (socket_state == SRTS_BROKEN || socket_state == SRTS_CLOSED) {
         DisconnectSocket(sockets[i]);
       } else if (socket_state == SRTS_CONNECTED) {
         ReadSocketData(sockets[i]);
       } else {
-        printf("[WARNING] Encountered new socket state, report it to maintainers -> %d\n", socket_state);
+        printf("[WARNING] Encountered new socket state, report it to "
+               "maintainers -> %d\n",
+               socket_state);
       }
     }
 
@@ -214,37 +225,20 @@ int Server::OnNewConnection(SRTSOCKET ns,
     srt_setsockflag(ns, SRTO_LATENCY, &latency_ms, sizeof latency_ms);
   }
 
-  std::unique_lock<std::mutex> lock(accept_mutex);
+  if (stream_ids_whitelist.find(std::string(streamid)) !=
+      stream_ids_whitelist.end()) {
 
-  awaiting_connect_request_socket = ns;
+    this->on_socket_connected(ns, streamid);
+    active_sockets.insert(ns);
+    const int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+    srt_epoll_add_usock(epoll, ns, &read_modes);
 
-  this->on_connect_request(address, streamid);
-
-  // NOTE: this check should be very fast as it blocks any receiving on the socket
-  auto result = accept_cv.wait_for(lock, std::chrono::milliseconds(1000));
-
-  if (result == std::cv_status::timeout) {
-    srt_setrejectreason(ns, SRT_REJC_PREDEFINED + 504);
-
-    return -1;
-  } else if (!accept_awaiting_stream_id) {
+    return 0;
+  } else {
     srt_setrejectreason(ns, SRT_REJC_PREDEFINED + 403);
 
     return -1;
   }
-
-  return 0;
-}
-
-void Server::AnswerConnectRequest(int accept) {
-  {
-    std::lock_guard<std::mutex> lock(accept_mutex);
-
-    accept_awaiting_stream_id = accept;
-    awaiting_connect_request_socket = -1;
-  }
-
-  accept_cv.notify_one();
 }
 
 bool Server::IsListeningSocket(Server::SrtSocket socket) const {
@@ -277,26 +271,4 @@ void Server::ReadSocketData(Server::SrtSocket socket) {
   } else {
     this->on_socket_data(socket, buffer, n);
   }
-}
-
-void Server::AcceptConnection() {
-  struct sockaddr_storage their_addr;
-  int addr_len = sizeof their_addr;
-
-  int socket = srt_accept(srt_sock, (struct sockaddr*)&their_addr, &addr_len);
-  if (socket == -1) {
-    throw std::runtime_error("Failed to accept new socket");
-  }
-
-  char raw_streamid[512] = {0};
-  int max_streamid_len = 512;
-  srt_getsockopt(socket, 0, SRTO_STREAMID, raw_streamid, &max_streamid_len);
-
-  auto streamid = std::string(raw_streamid, raw_streamid + max_streamid_len);
-
-  this->on_socket_connected(socket, streamid);
-  active_sockets.insert(socket);
-
-  const int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-  srt_epoll_add_usock(epoll, socket, &read_modes);
 }
