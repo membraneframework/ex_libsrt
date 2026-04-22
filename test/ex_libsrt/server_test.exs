@@ -253,6 +253,26 @@ defmodule ExLibSRT.ServerTest do
     end
   end
 
+  describe "server owner" do
+    @tag :srt_tools_required
+    test "receives rejected client notifications" do
+      owner = spawn(fn ->
+        assert_receive {:srt_server_rejected_client, "unknown_stream_id"}, 1_000
+      end)
+
+      srt_port = Enum.random(10_000..20_000)
+      udp_port = Enum.random(10_000..20_000)
+
+      {:ok, server} = Server.start("0.0.0.0", srt_port, "", -1, [], owner)
+      on_exit(fn -> Server.stop(server) end)
+
+      proxy = Transmit.start_streaming_proxy(udp_port, srt_port, "unknown_stream_id")
+      on_exit(fn -> stop_proxy_safe(proxy) end)
+
+      refute_receive {:srt_server_rejected_client, _stream_id}, 0
+    end
+  end
+
   # Password validation tests
   describe "server password validation" do
     test "rejects too short password" do

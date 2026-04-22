@@ -62,6 +62,21 @@ defmodule ExLibSRT.Server do
 
   If a password is provided, it must be between 10 and 79 characters long according to SRT specification.
   An empty string means no password authentication will be used.
+
+  ## Stream ID Whitelist
+
+  `allowed_stream_id_with_receiver_list` is a list of `{stream_id, receiver}` pairs that pre-populate
+  the server's whitelist. Each connecting client must present a `streamid` matching one of the listed
+  stream IDs, otherwise it is rejected with code `1403`. The `receiver` pid is the process that will
+  receive `t:srt_server_conn/0`, `t:srt_data/0`, and `t:srt_server_conn_closed/0` messages for that
+  stream. The whitelist can also be modified at runtime with `add_stream_id_to_whitelist/3` and
+  `remove_stream_id_from_whitelist/2`. `ExLibSRT.Connection.start/1` is a convenient way to spawn
+  a dedicated receiver process backed by a `ExLibSRT.Connection.Handler` behaviour.
+
+  ## Owner
+
+  `owner` is the process that receives `{:srt_server_rejected_client, stream_id}` notifications
+  when a connection attempt is rejected due to an unknown stream ID. Defaults to `self()`.
   """
   @spec start_link(
           address :: String.t(),
@@ -110,6 +125,21 @@ defmodule ExLibSRT.Server do
 
   If a password is provided, it must be between 10 and 79 characters long according to SRT specification.
   An empty string means no password authentication will be used.
+
+  ## Stream ID Whitelist
+
+  `allowed_stream_id_with_receiver_list` is a list of `{stream_id, receiver}` pairs that pre-populate
+  the server's whitelist. Each connecting client must present a `streamid` matching one of the listed
+  stream IDs, otherwise it is rejected with code `1403`. The `receiver` pid is the process that will
+  receive `t:srt_server_conn/0`, `t:srt_data/0`, and `t:srt_server_conn_closed/0` messages for that
+  stream. The whitelist can also be modified at runtime with `add_stream_id_to_whitelist/3` and
+  `remove_stream_id_from_whitelist/2`. `ExLibSRT.Connection.start/1` is a convenient way to spawn
+  a dedicated receiver process backed by a `ExLibSRT.Connection.Handler` behaviour.
+
+  ## Owner
+
+  `owner` is the process that receives `{:srt_server_rejected_client, stream_id}` notifications
+  when a connection attempt is rejected due to an unknown stream ID. Defaults to `self()`.
   """
   @spec start(address :: String.t(), port :: non_neg_integer()) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
@@ -167,8 +197,10 @@ defmodule ExLibSRT.Server do
   @doc """
   Adds a stream ID to the server's whitelist at runtime.
 
-  The `receiver` process will receive connection and data messages for this stream ID.
-  Defaults to `self()` when not provided.
+  The `receiver` process will receive `t:srt_server_conn/0`, `t:srt_data/0`, and
+  `t:srt_server_conn_closed/0` messages for this stream ID. Defaults to `self()` when not provided.
+  `ExLibSRT.Connection.start/1` is a convenient way to spawn a dedicated receiver process backed
+  by a `ExLibSRT.Connection.Handler` behaviour.
   """
   @spec add_stream_id_to_whitelist(t(), String.t(), pid() | nil) ::
           :ok | {:error, reason :: String.t()}

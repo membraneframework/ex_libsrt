@@ -66,9 +66,16 @@ defmodule Server do
         {stream_id, handler}
       end)
 
-    {:ok, server} = ExLibSRT.Server.start("0.0.0.0", 12_000, "", -1, receivers)
+    {:ok, server} = ExLibSRT.Server.start("0.0.0.0", 12_000, "", -1, receivers, self())
 
     {:ok, server}
+  end
+
+  @impl true
+  def handle_info({:srt_server_rejected_client, stream_id}, server) do
+    Logger.warning("Rejected connection attempt for unknown stream ID: #{stream_id}")
+
+    {:noreply, server}
   end
 
   @impl true
