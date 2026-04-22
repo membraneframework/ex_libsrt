@@ -68,7 +68,8 @@ defmodule ExLibSRT.Server do
           port :: non_neg_integer(),
           password :: String.t(),
           latency_ms :: integer(),
-          allowed_stream_id_with_receiver_list :: [{String.t(), pid()}]
+          allowed_stream_id_with_receiver_list :: [{String.t(), pid()}],
+          owner :: pid()
         ) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
   def start_link(
@@ -76,8 +77,10 @@ defmodule ExLibSRT.Server do
         port,
         password \\ "",
         latency_ms \\ -1,
-        allowed_stream_id_with_receiver_list \\ []
+        allowed_stream_id_with_receiver_list \\ [],
+        owner \\ nil
       ) do
+    owner = owner || self()
     {stream_ids_whitelist, receivers} = Enum.unzip(allowed_stream_id_with_receiver_list)
 
     with :ok <- validate_password(password),
@@ -88,7 +91,8 @@ defmodule ExLibSRT.Server do
              password,
              latency_ms,
              stream_ids_whitelist,
-             receivers
+             receivers,
+             owner
            ) do
       Agent.start_link(fn -> server_ref end)
     else
@@ -114,7 +118,8 @@ defmodule ExLibSRT.Server do
           port :: non_neg_integer(),
           password :: String.t(),
           latency_ms :: integer(),
-          allowed_stream_id_with_receiver_list :: [{String.t(), pid()}]
+          allowed_stream_id_with_receiver_list :: [{String.t(), pid()}],
+          owner :: pid()
         ) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
   def start(
@@ -122,8 +127,10 @@ defmodule ExLibSRT.Server do
         port,
         password \\ "",
         latency_ms \\ -1,
-        allowed_stream_id_with_receiver_list \\ []
+        allowed_stream_id_with_receiver_list \\ [],
+        owner \\ nil
       ) do
+    owner = owner || self()
     {stream_ids_whitelist, receivers} = Enum.unzip(allowed_stream_id_with_receiver_list)
 
     with :ok <- validate_password(password),
@@ -134,7 +141,8 @@ defmodule ExLibSRT.Server do
              password,
              latency_ms,
              stream_ids_whitelist,
-             receivers
+             receivers,
+             owner
            ) do
       Agent.start(fn -> server_ref end, name: {:global, server_ref})
     else

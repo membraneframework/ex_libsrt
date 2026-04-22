@@ -137,15 +137,14 @@ UNIFEX_TERM start_server(UnifexEnv* env,
                          char** stream_ids_whitelist,
                          unsigned int stream_ids_whitelist_length,
                          UnifexPid* receivers,
-                         unsigned int receivers_length) {
+                         unsigned int receivers_length,
+                         UnifexPid owner) {
   State* state = unifex_alloc_state(env);
   state = new (state) State();
 
   try {
     state->env = unifex_alloc_env(env);
-    if (!unifex_self(env, &state->owner)) {
-      throw std::runtime_error("failed to create native state");
-    };
+    state->owner = owner;
 
     state->server = std::make_unique<Server>();
 
