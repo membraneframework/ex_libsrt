@@ -15,7 +15,7 @@ extern "C" {
 }
 
 class Server {
-  static const int MAX_PENDING_CONNECTIONS = 5;
+  static const int MAX_PENDING_CONNECTIONS = 100;
 
 public:
   using SrtSocket = int;

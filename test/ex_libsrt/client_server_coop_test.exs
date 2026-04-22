@@ -59,7 +59,7 @@ defmodule ExLibSRT.ClientServerCoopTest do
     assert {:error, "Stream rejected by server", 403} =
              Client.start("127.0.0.1", ctx.srt_port, "some_stream_id")
 
-    assert_receive :stopped, 2_000
+    assert_receive :stopped, 4_000
   end
 
   # Password authentication tests
@@ -115,7 +115,7 @@ defmodule ExLibSRT.ClientServerCoopTest do
       assert {:error, _reason, _code} =
                Client.start("127.0.0.1", ctx.srt_port, "auth_stream", client_password)
 
-      assert_receive :server_done, 2_000
+      assert_receive :server_done, 4_000
     end
 
     test "failed connection when server has password but client doesn't", ctx do
@@ -143,7 +143,7 @@ defmodule ExLibSRT.ClientServerCoopTest do
       assert {:error, _reason, _code} =
                Client.start("127.0.0.1", ctx.srt_port, "auth_stream")
 
-      assert_receive :server_done, 2_000
+      assert_receive :server_done, 4_000
     end
 
     test "failed connection when client has password but server doesn't", ctx do

@@ -96,6 +96,8 @@ defmodule ExLibSRT.ServerTest do
 
     @tag :srt_tools_required
     test "send closed connection notification", ctx do
+      :ok = Server.add_stream_id_to_whitelist(ctx.server, "closing_stream_id")
+
       proxy =
         Transmit.start_streaming_proxy(
           ctx.udp_port,
@@ -206,10 +208,13 @@ defmodule ExLibSRT.ServerTest do
 
     @tag :srt_tools_required
     test "read socket stats", ctx do
+      :ok = Server.add_stream_id_to_whitelist(ctx.server, "stats_stream_id")
+
       proxy =
         Transmit.start_streaming_proxy(
           ctx.udp_port,
-          ctx.srt_port
+          ctx.srt_port,
+          "stats_stream_id"
         )
 
       on_exit(fn -> stop_proxy_safe(proxy) end)
