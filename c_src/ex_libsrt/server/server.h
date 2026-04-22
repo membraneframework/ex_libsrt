@@ -50,8 +50,13 @@ public:
   }
 
   void SetOnSocketData(
-      std::function<void(SrtSocket, const char*, int)>&& on_socket_data) {
+      std::function<void(SrtSocket, const char*, int)> on_socket_data) {
     this->on_socket_data = std::move(on_socket_data);
+  }
+
+  void SetOnClientRejected(
+      std::function<void(const std::string&)> on_client_rejected) {
+    this->on_client_rejected = on_client_rejected;
   }
 
   void
@@ -103,7 +108,7 @@ private:
   std::function<void(SrtSocket, const std::string&)> on_socket_connected;
   std::function<void(SrtSocket)> on_socket_disconnected;
   std::function<void(SrtSocket, const char*, int)> on_socket_data;
+  std::function<void(const std::string&)> on_client_rejected;
   std::function<void(const std::string&)> on_fatal_error;
-
   std::unordered_set<std::string> stream_ids_whitelist = {};
 };

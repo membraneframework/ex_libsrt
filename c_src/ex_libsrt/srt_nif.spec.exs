@@ -87,6 +87,7 @@ sends {:srt_server_conn :: label, conn :: int, stream_id :: string}
 sends {:srt_server_conn_closed:: label, conn :: int}
 sends {:srt_server_error :: label, conn :: int, error :: string}
 sends {:srt_data :: label, conn :: int, data :: payload}
+sends {:srt_server_rejected_client :: label, stream_id :: string}
 
 sends :srt_client_connected :: label
 sends :srt_client_disconnected :: label

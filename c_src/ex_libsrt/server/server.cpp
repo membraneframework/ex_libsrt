@@ -237,6 +237,8 @@ int Server::OnNewConnection(SRTSOCKET ns,
   } else {
     srt_setrejectreason(ns, SRT_REJC_PREDEFINED + 403);
 
+    on_client_rejected(std::string(streamid));
+
     return -1;
   }
 }

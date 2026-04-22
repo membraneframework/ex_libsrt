@@ -38,6 +38,17 @@ defmodule ExLibSRT.ServerTest do
     end
 
     @tag :srt_tools_required
+    test "notifies about rejected connection", ctx do
+      stream_id = "forbidden_stream_id"
+      :ok = Server.add_stream_id_to_whitelist(ctx.server, "other_allowed_stream")
+
+      proxy = Transmit.start_streaming_proxy(ctx.udp_port, ctx.srt_port, stream_id)
+      on_exit(fn -> stop_proxy_safe(proxy) end)
+
+      assert_receive {:srt_server_rejected_client, ^stream_id}, 1_000
+    end
+
+    @tag :srt_tools_required
     test "receive data over connection", ctx do
       :ok = Server.add_stream_id_to_whitelist(ctx.server, "data_stream_id")
 
