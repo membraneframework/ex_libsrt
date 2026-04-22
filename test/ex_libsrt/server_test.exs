@@ -256,9 +256,10 @@ defmodule ExLibSRT.ServerTest do
   describe "server owner" do
     @tag :srt_tools_required
     test "receives rejected client notifications" do
-      owner = spawn(fn ->
-        assert_receive {:srt_server_rejected_client, "unknown_stream_id"}, 1_000
-      end)
+      owner =
+        spawn(fn ->
+          assert_receive {:srt_server_rejected_client, "unknown_stream_id"}, 1_000
+        end)
 
       srt_port = Enum.random(10_000..20_000)
       udp_port = Enum.random(10_000..20_000)
