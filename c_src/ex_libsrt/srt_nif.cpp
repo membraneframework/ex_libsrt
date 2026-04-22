@@ -197,9 +197,8 @@ UNIFEX_TERM start_server(UnifexEnv* env,
           unifex_free(payload);
         });
 
-    state->server->SetOnClientRejected([=](std::string stream_id) {
-      send_srt_server_rejected_client(
-          state->env, state->owner, 1, stream_id.c_str());
+    state->server->SetOnClientRejected([=](const char* stream_id) {
+      send_srt_server_rejected_client(state->env, state->owner, 1, stream_id);
     });
 
     std::unordered_set<std::string> stream_ids_whitelist_set(
