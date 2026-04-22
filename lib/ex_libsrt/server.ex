@@ -6,9 +6,9 @@ defmodule ExLibSRT.Server do
   The server API consists of the following functions:
 
   * `start/2` - starts the server
-  * `start/5` - starts the server with password authentication, latency and stream ID whitelist
+  * `start/6` - starts the server with password authentication, latency and stream ID whitelist
   * `start_link/2` - starts the server and links to current process
-  * `start_link/5` - starts the server with password authentication, latency and stream ID whitelist, links to current process
+  * `start_link/6` - starts the server with password authentication, latency and stream ID whitelist, links to current process
   * `stop/1` - stops the server
   * `close_server_connection/2` - stops server's connection to given client
   * `add_stream_id_to_whitelist/3` - adds a stream ID to the server's whitelist at runtime
@@ -35,7 +35,7 @@ defmodule ExLibSRT.Server do
   that stream.
 
   The whitelist can be supplied up-front via the `allowed_stream_id_with_receiver_list` argument
-  of `start/5` / `start_link/5`, and modified at runtime with `add_stream_id_to_whitelist/3` and
+  of `start/6` / `start_link/6`, and modified at runtime with `add_stream_id_to_whitelist/3` and
   `remove_stream_id_from_whitelist/2`.
 
   When a client connects with a stream ID that is not on the whitelist, the server responds with
@@ -84,7 +84,7 @@ defmodule ExLibSRT.Server do
           password :: String.t(),
           latency_ms :: integer(),
           allowed_stream_id_with_receiver_list :: [{String.t(), pid()}],
-          owner :: pid()
+          owner :: pid() | nil
         ) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
   def start_link(
@@ -149,7 +149,7 @@ defmodule ExLibSRT.Server do
           password :: String.t(),
           latency_ms :: integer(),
           allowed_stream_id_with_receiver_list :: [{String.t(), pid()}],
-          owner :: pid()
+          owner :: pid() | nil
         ) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
   def start(
