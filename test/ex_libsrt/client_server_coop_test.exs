@@ -10,14 +10,12 @@ defmodule ExLibSRT.ClientServerCoopTest do
 
     Task.start(fn ->
       assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port)
+      Server.add_stream_id_to_whitelist(server, "some_stream_id")
 
       send(parent, :running)
 
-      assert_receive {:srt_server_connect_request, _address, "some_stream_id"}
-
-      Server.accept_awaiting_connect_request(server)
-
       assert_receive {:srt_server_conn, conn_id, _stream_id}, 1000
+      :ok = Server.bind_with_process(server, conn_id)
 
       assert_receive {:srt_server_conn_closed, ^conn_id}, 2000
 
@@ -46,14 +44,11 @@ defmodule ExLibSRT.ClientServerCoopTest do
 
     Task.start(fn ->
       assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port)
+      Server.add_stream_id_to_whitelist(server, "allowed_stream")
 
       send(parent, :running)
 
-      assert_receive {:srt_server_connect_request, _address, "some_stream_id"}
-
-      Server.reject_awaiting_connect_request(server)
-
-      Process.sleep(100)
+      Process.sleep(2_000)
 
       Server.stop(server)
 
@@ -65,32 +60,7 @@ defmodule ExLibSRT.ClientServerCoopTest do
     assert {:error, "Stream rejected by server", 403} =
              Client.start("127.0.0.1", ctx.srt_port, "some_stream_id")
 
-    assert_receive :stopped, 2_000
-  end
-
-  test "reject client when timeing out the request awaiting time", ctx do
-    parent = self()
-
-    Task.start(fn ->
-      assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port)
-
-      send(parent, :running)
-
-      Process.sleep(1_000)
-
-      Process.sleep(100)
-
-      Server.stop(server)
-
-      send(parent, :stopped)
-    end)
-
-    assert_receive :running, 500
-
-    assert {:error, "Stream rejected by server", 504} =
-             Client.start("127.0.0.1", ctx.srt_port, "some_stream_id")
-
-    assert_receive :stopped, 2_000
+    assert_receive :stopped, 4_000
   end
 
   # Password authentication tests
@@ -101,10 +71,8 @@ defmodule ExLibSRT.ClientServerCoopTest do
 
       Task.start(fn ->
         assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port, password)
+        Server.add_stream_id_to_whitelist(server, "auth_stream")
         send(parent, :server_running)
-
-        assert_receive {:srt_server_connect_request, _address, "auth_stream"}
-        Server.accept_awaiting_connect_request(server)
 
         assert_receive {:srt_server_conn, _conn_id, _stream_id}, 1_000
 
@@ -131,12 +99,10 @@ defmodule ExLibSRT.ClientServerCoopTest do
         assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port, server_password)
         send(parent, :server_running)
 
-        # Server may receive connect request but should reject due to password mismatch
         receive do
-          {:srt_server_connect_request, _address, "auth_stream"} ->
-            Server.accept_awaiting_connect_request(server)
+          {:srt_server_conn, _address, "auth_stream"} -> :ok
         after
-          2_000 -> :timeout
+          2_000 -> :ok
         end
 
         Server.stop(server)
@@ -150,7 +116,7 @@ defmodule ExLibSRT.ClientServerCoopTest do
       assert {:error, _reason, _code} =
                Client.start("127.0.0.1", ctx.srt_port, "auth_stream", client_password)
 
-      assert_receive :server_done, 2_000
+      assert_receive :server_done, 4_000
     end
 
     test "failed connection when server has password but client doesn't", ctx do
@@ -162,10 +128,9 @@ defmodule ExLibSRT.ClientServerCoopTest do
         send(parent, :server_running)
 
         receive do
-          {:srt_server_connect_request, _address, "auth_stream"} ->
-            Server.accept_awaiting_connect_request(server)
+          {:srt_server_conn, _address, "auth_stream"} -> :ok
         after
-          2_000 -> :timeout
+          2_000 -> :ok
         end
 
         Server.stop(server)
@@ -179,7 +144,7 @@ defmodule ExLibSRT.ClientServerCoopTest do
       assert {:error, _reason, _code} =
                Client.start("127.0.0.1", ctx.srt_port, "auth_stream")
 
-      assert_receive :server_done, 2_000
+      assert_receive :server_done, 4_000
     end
 
     test "failed connection when client has password but server doesn't", ctx do
@@ -189,14 +154,15 @@ defmodule ExLibSRT.ClientServerCoopTest do
       Task.start(fn ->
         # No password
         assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port)
+        :ok = Server.add_stream_id_to_whitelist(server, "auth_stream")
         send(parent, :server_running)
 
-        receive do
-          {:srt_server_connect_request, _address, "auth_stream"} ->
-            Server.accept_awaiting_connect_request(server)
-        after
-          2_000 -> :timeout
-        end
+        :ok =
+          receive do
+            {:srt_server_conn, _address, "auth_stream"} -> :ok
+          after
+            2_000 -> :timeout
+          end
 
         Server.stop(server)
 
@@ -218,10 +184,8 @@ defmodule ExLibSRT.ClientServerCoopTest do
       Task.start(fn ->
         # No password
         assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port)
+        Server.add_stream_id_to_whitelist(server, "no_auth_stream")
         send(parent, :server_running)
-
-        assert_receive {:srt_server_connect_request, _address, "no_auth_stream"}
-        Server.accept_awaiting_connect_request(server)
 
         assert_receive {:srt_server_conn, _conn_id, _stream_id}, 1_000
 
