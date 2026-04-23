@@ -133,6 +133,7 @@ UNIFEX_TERM start_server(UnifexEnv* env,
                          int port,
                          char* password,
                          int latency_ms,
+                         int accept_all,
                          char** stream_ids_whitelist,
                          unsigned int stream_ids_whitelist_length,
                          UnifexPid owner) {
@@ -189,6 +190,12 @@ UNIFEX_TERM start_server(UnifexEnv* env,
               state->env, state->owner, 1, socket, stream_id.c_str());
         });
 
+    state->server->SetOnConnectionTimeout(
+        [=](Server::SrtSocket socket, const std::string& stream_id) {
+          send_srt_server_conn_timeout(
+              state->env, state->owner, 1, socket, stream_id.c_str());
+        });
+
     std::unordered_set<std::string> stream_ids_whitelist_set(
         stream_ids_whitelist,
         stream_ids_whitelist + stream_ids_whitelist_length);
@@ -197,6 +204,7 @@ UNIFEX_TERM start_server(UnifexEnv* env,
                        port,
                        std::string(password),
                        latency_ms,
+                       static_cast<bool>(accept_all),
                        std::move(stream_ids_whitelist_set));
 
     UNIFEX_TERM result = start_server_result_ok(env, state);

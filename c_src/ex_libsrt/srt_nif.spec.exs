@@ -63,7 +63,7 @@ type srt_socket_stats :: %ExLibSRT.SocketStats{
 callback :load, :on_load
 callback :unload, :on_unload
 
-spec start_server(host :: string, port :: int, password :: string, latency_ms :: int, stream_ids_whitelist :: [string], owner :: pid) :: {:ok :: label, state} | {:error :: label, reason :: string}
+spec start_server(host :: string, port :: int, password :: string, latency_ms :: int, accept_all :: bool, stream_ids_whitelist :: [string], owner :: pid) :: {:ok :: label, state} | {:error :: label, reason :: string}
 
 spec add_stream_id_to_whitelist(stream_id :: string, state) :: (:ok :: label)
 
@@ -90,9 +90,10 @@ sends {:srt_server_conn_closed:: label, conn :: int}
 sends {:srt_server_error :: label, conn :: int, error :: string}
 sends {:srt_data :: label, conn :: int, data :: payload}
 sends {:srt_server_rejected_client :: label, stream_id :: string}
+sends {:srt_server_conn_timeout :: label, conn_id :: int, stream_id :: string}
 
 sends :srt_client_connected :: label
 sends :srt_client_disconnected :: label
 sends {:srt_client_error :: label, reason :: string}
 
-dirty :io,  start_server: 6, bind_with_process: 3, close_server_connection: 2, stop_server: 1, start_client: 5, read_server_socket_stats: 2, read_client_socket_stats: 1
+dirty :io,  start_server: 7, bind_with_process: 3, close_server_connection: 2, stop_server: 1, start_client: 5, read_server_socket_stats: 2, read_client_socket_stats: 1

@@ -13,6 +13,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#define BIND_RECEIVER_TIMEOUT_SEC 1
+
 extern "C" {
 #include <arpa/inet.h>
 }
@@ -31,6 +33,7 @@ public:
            int port,
            const std::string& password = "",
            int latency_ms = -1,
+           bool accept_all = false,
            std::unordered_set<std::string> stream_ids_whitelist = {});
 
   void Stop();
@@ -60,6 +63,11 @@ public:
   void SetOnClientPending(
       std::function<void(SrtSocket, const std::string&)> on_client_pending) {
     this->on_client_pending = std::move(on_client_pending);
+  }
+
+  void SetOnConnectionTimeout(
+      std::function<void(SrtSocket, const std::string&)> on_connection_timeout) {
+    this->on_connection_timeout = std::move(on_connection_timeout);
   }
 
   void
@@ -112,7 +120,9 @@ private:
   std::function<void(SrtSocket, const char*, int)> on_socket_data;
   std::function<void(const char*)> on_client_rejected;
   std::function<void(SrtSocket, const std::string&)> on_client_pending;
+  std::function<void(SrtSocket, const std::string&)> on_connection_timeout;
   std::function<void(const std::string&)> on_fatal_error;
+  bool accept_all = false;
   std::unordered_set<std::string> stream_ids_whitelist = {};
 
   using PendingEntry =

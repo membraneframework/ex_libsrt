@@ -45,7 +45,7 @@ defmodule ExLibSRT.Server do
   rejection code `1403` (analogous to HTTP 403 Forbidden).
 
   ### Accepting connections — accept-all mode
-  When `allowed_stream_ids` is `nil` (the default) the server operates in **accept-all mode**:
+  When `allowed_stream_ids` is explicitly set to `nil` the server operates in **accept-all mode**:
   every incoming connection is accepted at the SRT level regardless of its stream ID.
 
   In both modes the owner process receives a `t:srt_server_conn/0` message for each accepted
@@ -56,6 +56,9 @@ defmodule ExLibSRT.Server do
   The registered receiver will receive `t:srt_data/0` and `t:srt_server_conn_closed/0` messages.
   When using `bind_with_handler`, the spawned `ExLibSRT.Connection` process also receives
   `t:srt_server_conn/0` to trigger `c:ExLibSRT.Connection.Handler.handle_connected/3`.
+
+  If the owner does not call `bind_with_process/3` or `bind_with_handler/3` within 1 second,
+  the connection is dropped and the owner receives `t:srt_server_conn_timeout/0`.
   """
 
   use Agent
@@ -68,6 +71,8 @@ defmodule ExLibSRT.Server do
   @type srt_server_conn_closed :: {:srt_server_conn_closed, connection_id()}
   @type srt_server_error :: {:srt_server_error, connection_id(), error :: String.t()}
   @type srt_data :: {:srt_data, connection_id(), data :: binary()}
+  @type srt_server_conn_timeout ::
+          {:srt_server_conn_timeout, connection_id(), stream_id :: String.t()}
 
   @doc """
   Starts a new SRT server binding to given address and port and links to current process.
@@ -106,10 +111,11 @@ defmodule ExLibSRT.Server do
         port,
         password \\ "",
         latency_ms \\ -1,
-        allowed_stream_ids \\ nil,
+        allowed_stream_ids \\ [],
         owner \\ nil
       ) do
     owner = owner || self()
+    accept_all = is_nil(allowed_stream_ids)
 
     with :ok <- validate_password(password),
          {:ok, server_ref} <-
@@ -118,6 +124,7 @@ defmodule ExLibSRT.Server do
              port,
              password,
              latency_ms,
+             accept_all,
              allowed_stream_ids || [],
              owner
            ) do
@@ -167,10 +174,11 @@ defmodule ExLibSRT.Server do
         port,
         password \\ "",
         latency_ms \\ -1,
-        allowed_stream_ids \\ nil,
+        allowed_stream_ids \\ [],
         owner \\ nil
       ) do
     owner = owner || self()
+    accept_all = is_nil(allowed_stream_ids)
 
     with :ok <- validate_password(password),
          {:ok, server_ref} <-
@@ -179,6 +187,7 @@ defmodule ExLibSRT.Server do
              port,
              password,
              latency_ms,
+             accept_all,
              allowed_stream_ids || [],
              owner
            ) do
@@ -264,20 +273,15 @@ defmodule ExLibSRT.Server do
   Spawns an `ExLibSRT.Connection` process backed by `handler` and binds it to a pending
   connection.
 
-  Must be called within 1 second of receiving `t:srt_server_conn/0`. The spawned process
-  receives `t:srt_server_conn/0` to trigger `c:ExLibSRT.Connection.Handler.handle_connected/3`,
-  then `t:srt_data/0` and `t:srt_server_conn_closed/0` for the lifetime of the connection.
-  Returns `{:ok, connection_pid}` on success or `{:error, reason}` if the connection ID is not
-  found or the handler fails to start.
+  Must be called within 1 second of receiving `t:srt_server_conn/0`.
   """
-  @spec bind_with_handler(ExLibSRT.Connection.Handler.t(), t(), connection_id()) ::
+  @spec bind_with_handler(t(), connection_id(), ExLibSRT.Connection.Handler.t()) ::
           {:ok, ExLibSRT.Connection.t()} | {:error, reason :: any()}
-  def bind_with_handler(handler, agent, conn_id) do
+  def bind_with_handler(agent, conn_id, handler) do
     with true <- Process.alive?(agent),
          server_ref = Agent.get(agent, & &1),
          {:ok, conn_process} <- ExLibSRT.Connection.start(handler),
-         {:ok, stream_id} <- ExLibSRT.Native.bind_with_process(conn_id, conn_process, server_ref) do
-      send(conn_process, {:srt_server_conn, conn_id, stream_id})
+         {:ok, _stream_id} <- ExLibSRT.Native.bind_with_process(conn_id, conn_process, server_ref) do
       {:ok, conn_process}
     else
       false ->

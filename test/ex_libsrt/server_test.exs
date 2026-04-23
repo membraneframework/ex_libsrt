@@ -190,7 +190,7 @@ defmodule ExLibSRT.ServerTest do
 
       assert_receive {:srt_server_conn, conn_id, _stream_id}, 2_000
 
-      {:ok, _connection} = Server.bind_with_handler(ReceiverHandler, ctx.server, conn_id)
+      {:ok, _connection} = Server.bind_with_handler(ctx.server, conn_id, ReceiverHandler)
 
       for i <- 1..10 do
         :ok = Transmit.send_payload(stream, "Hello world! (#{i})")
@@ -266,6 +266,33 @@ defmodule ExLibSRT.ServerTest do
     end
   end
 
+  describe "accept-all mode" do
+    setup :prepare_streaming_accept_all
+
+    @tag :srt_tools_required
+    test "accepts any connection regardless of stream id", ctx do
+      proxy = Transmit.start_streaming_proxy(ctx.udp_port, ctx.srt_port, "any_stream_id")
+      on_exit(fn -> stop_proxy_safe(proxy) end)
+
+      assert_receive {:srt_server_conn, conn_id, "any_stream_id"}, 1_000
+      :ok = Server.bind_with_process(ctx.server, conn_id)
+
+      Transmit.stop_proxy(proxy)
+    end
+
+    @tag :srt_tools_required
+    test "notifies owner and drops connection if not bound within 1 second", ctx do
+      proxy = Transmit.start_streaming_proxy(ctx.udp_port, ctx.srt_port, "unbound_stream")
+      on_exit(fn -> stop_proxy_safe(proxy) end)
+
+      assert_receive {:srt_server_conn, conn_id, "unbound_stream"}, 1_000
+
+      assert_receive {:srt_server_conn_timeout, ^conn_id, "unbound_stream"}, 2_000
+
+      assert {:error, _reason} = Server.bind_with_process(ctx.server, conn_id)
+    end
+  end
+
   # Password validation tests
   describe "server password validation" do
     test "rejects too short password" do
@@ -305,6 +332,16 @@ defmodule ExLibSRT.ServerTest do
     srt_port = Enum.random(10_000..20_000)
 
     {:ok, server} = Server.start("0.0.0.0", srt_port)
+    on_exit(fn -> Server.stop(server) end)
+
+    [udp_port: udp_port, srt_port: srt_port, server: server]
+  end
+
+  defp prepare_streaming_accept_all(_ctx) do
+    udp_port = Enum.random(10_000..20_000)
+    srt_port = Enum.random(10_000..20_000)
+
+    {:ok, server} = Server.start("0.0.0.0", srt_port, "", -1, nil)
     on_exit(fn -> Server.stop(server) end)
 
     [udp_port: udp_port, srt_port: srt_port, server: server]

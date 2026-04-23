@@ -11,9 +11,11 @@ void Server::Run(const std::string& address,
                  int port,
                  const std::string& password,
                  int latency_ms,
+                 bool accept_all,
                  std::unordered_set<std::string> ids_whitelist) {
   this->password = password;
   this->latency_ms = latency_ms;
+  this->accept_all = accept_all;
   this->stream_ids_whitelist = std::move(ids_whitelist);
 
   struct sockaddr_storage ss;
@@ -190,7 +192,11 @@ void Server::RunEpoll() {
       std::lock_guard lock(pending_mutex);
       for (auto it = pending_connections.begin();
            it != pending_connections.end();) {
-        if (now - it->second.second > std::chrono::seconds(1)) {
+        if (now - it->second.second >
+            std::chrono::seconds(BIND_RECEIVER_TIMEOUT_SEC)) {
+          if (on_connection_timeout) {
+            on_connection_timeout(it->first, it->second.first);
+          }
           srt_close(it->first);
           it = pending_connections.erase(it);
         } else {
@@ -240,9 +246,8 @@ int Server::OnNewConnection(SRTSOCKET ns,
     srt_setsockflag(ns, SRTO_LATENCY, &latency_ms, sizeof latency_ms);
   }
 
-  if (!stream_ids_whitelist.empty() &&
-      stream_ids_whitelist.find(std::string(streamid)) ==
-          stream_ids_whitelist.end()) {
+  if (!accept_all && stream_ids_whitelist.find(std::string(streamid)) ==
+                         stream_ids_whitelist.end()) {
     srt_setrejectreason(ns, SRT_REJC_PREDEFINED + 403);
     on_client_rejected(streamid);
     return -1;
