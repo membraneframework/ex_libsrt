@@ -14,15 +14,6 @@ defmodule ConnectionHandler do
   end
 
   @impl true
-  def handle_connected(conn_id, stream_id, state) do
-    Logger.info("Connected with conn_id: #{conn_id} and stream_id: #{stream_id}")
-
-    Registry.register(state.registry, "connections", conn_id)
-
-    {:ok, Map.put(state, :conn_id, conn_id)}
-  end
-
-  @impl true
   def handle_disconnected(state) do
     Logger.info("Connection closed conn_id: #{state.conn_id}")
     :ok

@@ -225,15 +225,13 @@ UNIFEX_TERM remove_stream_id_from_whitelist(UnifexEnv* env,
 }
 
 UNIFEX_TERM bind_with_process(UnifexEnv* env,
-                           int conn_id,
-                           UnifexPid receiver,
-                           UnifexState* state) {
+                              int conn_id,
+                              UnifexPid receiver,
+                              UnifexState* state) {
   if (state->server == nullptr) {
     return bind_with_process_result_error(env, "Server is not active");
   }
 
-  // Register receiver before activating the socket so no data packet can
-  // arrive on the epoll thread between BindSocket and conn_receivers.insert
   {
     std::lock_guard lock(state->conn_receivers_mutex);
     state->conn_receivers.insert({conn_id, receiver});
@@ -243,7 +241,8 @@ UNIFEX_TERM bind_with_process(UnifexEnv* env,
   if (!state->server->BindSocket(conn_id, stream_id)) {
     std::lock_guard lock(state->conn_receivers_mutex);
     state->conn_receivers.erase(conn_id);
-    return bind_with_process_result_error(env, "Connection not found or timed out");
+    return bind_with_process_result_error(env,
+                                          "Connection not found or timed out");
   }
 
   return bind_with_process_result_ok(env, stream_id.c_str());

@@ -67,17 +67,6 @@ defmodule ExLibSRT.Connection do
   end
 
   @impl true
-  def handle_info({:srt_server_conn, conn, stream_id}, state) do
-    case state.handler.handle_connected(conn, stream_id, state.handler_state) do
-      {:ok, handler_state} ->
-        {:noreply, %{state | handler_state: handler_state}}
-
-      :stop ->
-        {:stop, :normal, state}
-    end
-  end
-
-  @impl true
   def handle_info({:srt_server_conn_closed, _conn}, state) do
     :ok = state.handler.handle_disconnected(state.handler_state)
 

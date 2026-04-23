@@ -164,13 +164,6 @@ defmodule ExLibSRT.ServerTest do
         end
 
         @impl true
-        def handle_connected(conn_id, stream_id, receiver) do
-          send(receiver, {:srt_handler_connected, conn_id, stream_id})
-
-          {:ok, receiver}
-        end
-
-        @impl true
         def handle_disconnected(receiver) do
           send(receiver, :srt_handler_disconnected)
 
@@ -198,8 +191,6 @@ defmodule ExLibSRT.ServerTest do
       assert_receive {:srt_server_conn, conn_id, _stream_id}, 2_000
 
       {:ok, _connection} = Server.bind_with_handler(ReceiverHandler, ctx.server, conn_id)
-
-      assert_receive {:srt_handler_connected, _conn_id, _stream_id}, 1_000
 
       for i <- 1..10 do
         :ok = Transmit.send_payload(stream, "Hello world! (#{i})")

@@ -31,7 +31,7 @@ defmodule ExLibSRT.Server do
 
   ### Accepting connections — whitelist mode
   Each SRT connection can carry a `streamid` string which can be used for identifying the stream.
-  When `allowed_stream_ids` is non-empty the server operates in **whitelist
+  When `allowed_stream_ids` is non-nil the server operates in **whitelist
   mode**: only connections whose `streamid` is present in the whitelist are accepted. For each
   whitelisted stream ID a receiver process must be provided — this is the process that will
   receive `t:srt_server_conn/0`, `t:srt_data/0`, and `t:srt_server_conn_closed/0` messages for

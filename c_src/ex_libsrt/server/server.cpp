@@ -259,14 +259,14 @@ int Server::OnNewConnection(SRTSOCKET ns,
   return 0;
 }
 
-bool Server::BindSocket(SrtSocket socket, std::string& out_stream_id) {
+bool Server::BindSocket(SrtSocket socket, std::string& stream_id) {
   std::lock_guard lock(pending_mutex);
   auto it = pending_connections.find(socket);
   if (it == pending_connections.end()) {
     return false;
   }
 
-  out_stream_id = it->second.first;
+  stream_id = it->second.first;
   pending_connections.erase(it);
 
   active_sockets.insert(socket);
