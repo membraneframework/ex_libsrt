@@ -58,17 +58,21 @@ defmodule Server do
   def init(_args) do
     stream_ids = ["some_stream_id_1", "some_stream_id_2", "some_stream_id_3"]
 
-    receivers =
-      Enum.map(stream_ids, fn stream_id ->
-        {:ok, handler} =
-          ExLibSRT.Connection.start(%ConnectionHandler{registry: ConnectionRegistry})
-
-        {stream_id, handler}
-      end)
-
-    {:ok, server} = ExLibSRT.Server.start("0.0.0.0", 12_000, "", -1, receivers, self())
+    {:ok, server} = ExLibSRT.Server.start("0.0.0.0", 12_000, "", -1, stream_ids, self())
 
     {:ok, server}
+  end
+
+  @impl true
+  def handle_info({:srt_server_conn, conn_id, _stream_id}, server) do
+    {:ok, _conn} =
+      ExLibSRT.Server.bind_with_handler(
+        %ConnectionHandler{registry: ConnectionRegistry},
+        server,
+        conn_id
+      )
+
+    {:noreply, server}
   end
 
   @impl true

@@ -11,7 +11,7 @@ defmodule Server do
 
   @impl true
   def init(_args) do
-    {:ok, server} = ExLibSRT.Server.start("0.0.0.0", 12_000, "", -1, [{"some_stream_id", self()}])
+    {:ok, server} = ExLibSRT.Server.start("0.0.0.0", 12_000, "", -1, ["some_stream_id"])
 
     {:ok, %{server: server, packets: 0}}
   end
@@ -19,6 +19,7 @@ defmodule Server do
   @impl true
   def handle_info({:srt_server_conn, conn_id, stream_id}, state) do
     Logger.info("Connection established with id: #{conn_id} for stream: #{stream_id}")
+    :ok = ExLibSRT.Server.bind_with_process(state.server, conn_id)
 
     {:noreply, state}
   end

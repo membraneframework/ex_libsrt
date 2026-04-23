@@ -2,12 +2,15 @@
 
 #include "../common/srt_socket_stats.h"
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <srt/srt.h>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 
 extern "C" {
@@ -34,15 +37,10 @@ public:
 
   void CloseConnection(int connection_id);
 
-  void AnswerConnectRequest(int accept);
+  bool BindSocket(SrtSocket socket, std::string& out_stream_id);
 
   std::unique_ptr<SrtSocketStats> ReadSocketStats(int socket,
                                                   bool clear_intervals);
-
-  void SetOnSocketConnected(
-      std::function<void(SrtSocket, const std::string&)> on_socket_connected) {
-    this->on_socket_connected = std::move(on_socket_connected);
-  };
 
   void SetOnSocketDisconnected(
       std::function<void(SrtSocket)>&& on_socket_disconnected) {
@@ -57,6 +55,11 @@ public:
   void
   SetOnClientRejected(std::function<void(const char*)> on_client_rejected) {
     this->on_client_rejected = on_client_rejected;
+  }
+
+  void SetOnClientPending(
+      std::function<void(SrtSocket, const std::string&)> on_client_pending) {
+    this->on_client_pending = std::move(on_client_pending);
   }
 
   void
@@ -105,10 +108,15 @@ private:
 
 private:
   std::set<SrtSocket> active_sockets;
-  std::function<void(SrtSocket, const std::string&)> on_socket_connected;
   std::function<void(SrtSocket)> on_socket_disconnected;
   std::function<void(SrtSocket, const char*, int)> on_socket_data;
   std::function<void(const char*)> on_client_rejected;
+  std::function<void(SrtSocket, const std::string&)> on_client_pending;
   std::function<void(const std::string&)> on_fatal_error;
   std::unordered_set<std::string> stream_ids_whitelist = {};
+
+  using PendingEntry =
+      std::pair<std::string, std::chrono::steady_clock::time_point>;
+  std::unordered_map<SrtSocket, PendingEntry> pending_connections;
+  std::mutex pending_mutex;
 };

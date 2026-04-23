@@ -15,6 +15,7 @@ defmodule ExLibSRT.ClientServerCoopTest do
       send(parent, :running)
 
       assert_receive {:srt_server_conn, conn_id, _stream_id}, 1000
+      :ok = Server.bind_with_process(server, conn_id)
 
       assert_receive {:srt_server_conn_closed, ^conn_id}, 2000
 

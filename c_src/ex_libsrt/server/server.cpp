@@ -1,5 +1,6 @@
 #include "server.h"
 
+#include <chrono>
 #include <cstring>
 #include <string>
 #include <unifex/unifex.h>
@@ -183,6 +184,20 @@ void Server::RunEpoll() {
         DisconnectSocket(broken_sockets[i]);
       }
     }
+
+    {
+      auto now = std::chrono::steady_clock::now();
+      std::lock_guard lock(pending_mutex);
+      for (auto it = pending_connections.begin();
+           it != pending_connections.end();) {
+        if (now - it->second.second > std::chrono::seconds(1)) {
+          srt_close(it->first);
+          it = pending_connections.erase(it);
+        } else {
+          ++it;
+        }
+      }
+    }
   }
 }
 
@@ -225,22 +240,40 @@ int Server::OnNewConnection(SRTSOCKET ns,
     srt_setsockflag(ns, SRTO_LATENCY, &latency_ms, sizeof latency_ms);
   }
 
-  if (stream_ids_whitelist.find(std::string(streamid)) !=
-      stream_ids_whitelist.end()) {
-
-    this->on_socket_connected(ns, streamid);
-    active_sockets.insert(ns);
-    const int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-    srt_epoll_add_usock(epoll, ns, &read_modes);
-
-    return 0;
-  } else {
+  if (!stream_ids_whitelist.empty() &&
+      stream_ids_whitelist.find(std::string(streamid)) ==
+          stream_ids_whitelist.end()) {
     srt_setrejectreason(ns, SRT_REJC_PREDEFINED + 403);
-
     on_client_rejected(streamid);
-
     return -1;
   }
+
+  {
+    std::lock_guard lock(pending_mutex);
+    pending_connections[ns] = {std::string(streamid),
+                               std::chrono::steady_clock::now()};
+  }
+  if (on_client_pending) {
+    on_client_pending(ns, std::string(streamid));
+  }
+  return 0;
+}
+
+bool Server::BindSocket(SrtSocket socket, std::string& out_stream_id) {
+  std::lock_guard lock(pending_mutex);
+  auto it = pending_connections.find(socket);
+  if (it == pending_connections.end()) {
+    return false;
+  }
+
+  out_stream_id = it->second.first;
+  pending_connections.erase(it);
+
+  active_sockets.insert(socket);
+  const int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+  srt_epoll_add_usock(epoll, socket, &read_modes);
+
+  return true;
 }
 
 bool Server::IsListeningSocket(Server::SrtSocket socket) const {

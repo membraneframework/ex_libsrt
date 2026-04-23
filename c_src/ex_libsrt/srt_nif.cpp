@@ -1,7 +1,6 @@
 #include "srt_nif.h"
 #include "ex_libsrt/_generated/nif/srt_nif.h"
 #include "unifex/unifex.h"
-#include <cassert>
 #include <cstdlib>
 #include <iterator>
 #include <unordered_set>
@@ -12,7 +11,7 @@
 static void close_all_connections(State* state) {
   std::vector<int> conn_ids;
   {
-    std::shared_lock lock(state->conn_receivers_mutex);
+    std::lock_guard lock(state->conn_receivers_mutex);
     conn_ids.reserve(state->conn_receivers.size());
     for (const auto& entry : state->conn_receivers) {
       conn_ids.push_back(entry.first);
@@ -136,8 +135,6 @@ UNIFEX_TERM start_server(UnifexEnv* env,
                          int latency_ms,
                          char** stream_ids_whitelist,
                          unsigned int stream_ids_whitelist_length,
-                         UnifexPid* receivers,
-                         unsigned int receivers_length,
                          UnifexPid owner) {
   State* state = unifex_alloc_state(env);
   state = new (state) State();
@@ -147,20 +144,6 @@ UNIFEX_TERM start_server(UnifexEnv* env,
     state->owner = owner;
 
     state->server = std::make_unique<Server>();
-
-    state->server->SetOnSocketConnected(
-        [=](Server::SrtSocket socket, const std::string& stream_id) {
-          std::lock_guard conn_receivers_lock(state->conn_receivers_mutex);
-          std::shared_lock whitelist_lock(state->whitelist_mutex);
-
-          if (auto it = state->stream_id_to_receiver_map.find(stream_id);
-              it != std::end(state->stream_id_to_receiver_map)) {
-            state->conn_receivers.insert({socket, it->second});
-
-            send_srt_server_conn(
-                state->env, it->second, 1, socket, stream_id.c_str());
-          }
-        });
 
     state->server->SetOnSocketDisconnected([=](Server::SrtSocket socket) {
       std::lock_guard lock(state->conn_receivers_mutex);
@@ -183,7 +166,7 @@ UNIFEX_TERM start_server(UnifexEnv* env,
           memcpy(payload->data, data, len);
 
           {
-            std::unique_lock lock(state->conn_receivers_mutex);
+            std::lock_guard lock(state->conn_receivers_mutex);
             if (auto it = state->conn_receivers.find(socket);
                 it != std::end(state->conn_receivers)) {
               // TODO: make sure that the message has been properly sent
@@ -200,16 +183,15 @@ UNIFEX_TERM start_server(UnifexEnv* env,
       send_srt_server_rejected_client(state->env, state->owner, 1, stream_id);
     });
 
+    state->server->SetOnClientPending(
+        [=](Server::SrtSocket socket, const std::string& stream_id) {
+          send_srt_server_conn(
+              state->env, state->owner, 1, socket, stream_id.c_str());
+        });
+
     std::unordered_set<std::string> stream_ids_whitelist_set(
         stream_ids_whitelist,
         stream_ids_whitelist + stream_ids_whitelist_length);
-
-    std::lock_guard lock(state->whitelist_mutex);
-    assert(stream_ids_whitelist_length == receivers_length);
-    for (unsigned int i = 0; i < receivers_length; i++) {
-      state->stream_id_to_receiver_map.insert(
-          {stream_ids_whitelist[i], receivers[i]});
-    }
 
     state->server->Run(std::string(address),
                        port,
@@ -230,25 +212,41 @@ UNIFEX_TERM start_server(UnifexEnv* env,
 
 UNIFEX_TERM add_stream_id_to_whitelist(UnifexEnv* env,
                                        char* stream_id,
-                                       UnifexPid receiver,
                                        UnifexState* state) {
-
-  std::lock_guard lock(state->whitelist_mutex);
   state->server->AddStreamIdToWhitelist(stream_id);
-  state->stream_id_to_receiver_map.insert({std::string(stream_id), receiver});
-
   return add_stream_id_to_whitelist_result_ok(env);
 }
 
 UNIFEX_TERM remove_stream_id_from_whitelist(UnifexEnv* env,
                                             char* stream_id,
                                             UnifexState* state) {
-
-  std::lock_guard lock(state->whitelist_mutex);
   state->server->RemoveStreamIdFromWhitelist(stream_id);
-  state->stream_id_to_receiver_map.erase(std::string(stream_id));
-
   return remove_stream_id_from_whitelist_result_ok(env);
+}
+
+UNIFEX_TERM bind_with_process(UnifexEnv* env,
+                           int conn_id,
+                           UnifexPid receiver,
+                           UnifexState* state) {
+  if (state->server == nullptr) {
+    return bind_with_process_result_error(env, "Server is not active");
+  }
+
+  // Register receiver before activating the socket so no data packet can
+  // arrive on the epoll thread between BindSocket and conn_receivers.insert
+  {
+    std::lock_guard lock(state->conn_receivers_mutex);
+    state->conn_receivers.insert({conn_id, receiver});
+  }
+
+  std::string stream_id;
+  if (!state->server->BindSocket(conn_id, stream_id)) {
+    std::lock_guard lock(state->conn_receivers_mutex);
+    state->conn_receivers.erase(conn_id);
+    return bind_with_process_result_error(env, "Connection not found or timed out");
+  }
+
+  return bind_with_process_result_ok(env, stream_id.c_str());
 }
 
 UNIFEX_TERM

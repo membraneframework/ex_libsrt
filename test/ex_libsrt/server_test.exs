@@ -21,7 +21,8 @@ defmodule ExLibSRT.ServerTest do
 
       on_exit(fn -> stop_proxy_safe(proxy) end)
 
-      assert_receive {:srt_server_conn, _conn_id, ^stream_id}, 1_000
+      assert_receive {:srt_server_conn, conn_id, ^stream_id}, 1_000
+      :ok = Server.bind_with_process(ctx.server, conn_id)
 
       Transmit.stop_proxy(proxy)
     end
@@ -61,6 +62,7 @@ defmodule ExLibSRT.ServerTest do
       on_exit(fn -> close_stream_safe(stream) end)
 
       assert_receive {:srt_server_conn, conn_id, _stream_id}, 1_000
+      :ok = Server.bind_with_process(ctx.server, conn_id)
 
       for i <- 1..10 do
         :ok = Transmit.send_payload(stream, "Hello world! (#{i})")
@@ -87,6 +89,7 @@ defmodule ExLibSRT.ServerTest do
           on_exit(fn -> stop_proxy_safe(proxy) end)
 
           assert_receive {:srt_server_conn, conn_id, _stream_id}, 1_000
+          :ok = Server.bind_with_process(ctx.server, conn_id)
 
           stream = Transmit.start_stream(udp_port)
           on_exit(fn -> close_stream_safe(stream) end)
@@ -119,6 +122,7 @@ defmodule ExLibSRT.ServerTest do
       on_exit(fn -> stop_proxy_safe(proxy) end)
 
       assert_receive {:srt_server_conn, conn_id, _stream_id}, 2_000
+      :ok = Server.bind_with_process(ctx.server, conn_id)
 
       :ok = Transmit.stop_proxy(proxy)
 
@@ -140,6 +144,7 @@ defmodule ExLibSRT.ServerTest do
       on_exit(fn -> stop_proxy_safe(proxy) end)
 
       assert_receive {:srt_server_conn, conn_id, ^stream_id}, 2_000
+      :ok = Server.bind_with_process(ctx.server, conn_id)
 
       Server.close_server_connection(conn_id, ctx.server)
 
@@ -190,10 +195,9 @@ defmodule ExLibSRT.ServerTest do
       stream = Transmit.start_stream(ctx.udp_port)
       on_exit(fn -> close_stream_safe(stream) end)
 
-      assert_receive {:srt_server_conn, conn_id, stream_id}, 2_000
+      assert_receive {:srt_server_conn, conn_id, _stream_id}, 2_000
 
-      {:ok, connection} = ExLibSRT.Connection.start(ReceiverHandler)
-      send(connection, {:srt_server_conn, conn_id, stream_id})
+      {:ok, _connection} = Server.bind_with_handler(ReceiverHandler, ctx.server, conn_id)
 
       assert_receive {:srt_handler_connected, _conn_id, _stream_id}, 1_000
 
@@ -204,16 +208,12 @@ defmodule ExLibSRT.ServerTest do
       :ok = Transmit.close_stream(stream)
 
       for i <- 1..10 do
-        assert_receive {:srt_data, ^conn_id, data}, 500
-        send(connection, {:srt_data, conn_id, data})
         assert_receive {:srt_handler_data, payload}, 500
         assert payload == "Hello world! (#{i})"
       end
 
       Transmit.stop_proxy(proxy)
 
-      assert_receive {:srt_server_conn_closed, ^conn_id}, 1_000
-      send(connection, {:srt_server_conn_closed, conn_id})
       assert_receive :srt_handler_disconnected, 1_000
     end
 
@@ -231,6 +231,7 @@ defmodule ExLibSRT.ServerTest do
       on_exit(fn -> stop_proxy_safe(proxy) end)
 
       assert_receive {:srt_server_conn, conn_id, _stream_id}, 2_000
+      :ok = Server.bind_with_process(ctx.server, conn_id)
 
       stream = Transmit.start_stream(ctx.udp_port)
       on_exit(fn -> close_stream_safe(stream) end)
@@ -264,7 +265,7 @@ defmodule ExLibSRT.ServerTest do
       srt_port = Enum.random(10_000..20_000)
       udp_port = Enum.random(10_000..20_000)
 
-      {:ok, server} = Server.start("0.0.0.0", srt_port, "", -1, [], owner)
+      {:ok, server} = Server.start("0.0.0.0", srt_port, "", -1, ["some_allowed_stream"], owner)
       on_exit(fn -> Server.stop(server) end)
 
       proxy = Transmit.start_streaming_proxy(udp_port, srt_port, "unknown_stream_id")
