@@ -54,8 +54,6 @@ defmodule ExLibSRT.Server do
   1 second the connection is dropped.
 
   The registered receiver will receive `t:srt_data/0` and `t:srt_server_conn_closed/0` messages.
-  When using `bind_with_handler`, the spawned `ExLibSRT.Connection` process also receives
-  `t:srt_server_conn/0` to trigger `c:ExLibSRT.Connection.Handler.handle_connected/3`.
 
   If the owner does not call `bind_with_process/3` or `bind_with_handler/3` within 1 second,
   the connection is dropped and the owner receives `t:srt_server_conn_timeout/0`.
