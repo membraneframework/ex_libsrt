@@ -242,7 +242,7 @@ defmodule ExLibSRT.Server do
   @spec bind_with_handler(t(), connection_id(), ExLibSRT.Connection.Handler.t()) ::
           {:ok, ExLibSRT.Connection.t()} | {:error, reason :: any()}
   def bind_with_handler(agent, conn_id, handler) do
-    with server_ref = Agent.get(agent, & &1),
+    with server_ref <- Agent.get(agent, & &1),
          {:ok, conn_process} <- ExLibSRT.Connection.start(handler),
          {:ok, _stream_id} <- ExLibSRT.Native.bind_with_process(conn_id, conn_process, server_ref) do
       {:ok, conn_process}
@@ -251,11 +251,6 @@ defmodule ExLibSRT.Server do
         error
     end
   end
-
-  @spec accept_awaiting_connect_request_with_handler(ExLibSRT.Connection.Handler.t(), t()) ::
-          {:ok, ExLibSRT.Connection.t()} | {:error, reason :: any()}
-  def accept_awaiting_connect_request_with_handler(handler, agent),
-    do: bind_with_handler(agent, handler)
 
   @doc """
   Closes the connection to the given client.

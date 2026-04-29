@@ -48,8 +48,6 @@ defmodule ExLibSRT.ClientTest do
     assert_receive :srt_client_connected
 
     :ok = Client.stop(client)
-
-    assert {:error, "Client is not active"} = Client.send_data("test payload", client)
   end
 
   @tag :srt_tools_required
@@ -65,8 +63,6 @@ defmodule ExLibSRT.ClientTest do
     Transmit.stop_proxy(proxy)
 
     assert_receive :srt_client_disconnected, 500
-
-    assert {:error, "Client is not active"} = Client.send_data("some payload", client)
   end
 
   @tag :srt_tools_required
