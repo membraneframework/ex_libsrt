@@ -76,8 +76,8 @@ defmodule ExLibSRT.Server do
     according to SRT specification. Empty string (default) means no password authentication.
   * `:latency_ms` - SRT latency in milliseconds. Defaults to `-1`.
   * `:accept_mode` - Controls how the server accepts connections. See
-    [whitelist mode](#accepting-connections-whitelist-mode) and
-    [accept-all mode](#accepting-connections-accept-all-mode) for details.
+    [whitelist mode](#module-accepting-connections-whitelist-mode) and
+    [accept-all mode](#module-accepting-connections-accept-all-mode) for details.
     Valid values are:
     * `:accept_all` - Accept all connections regardless of stream ID.
     * `:whitelist` - Whitelist mode with an empty initial whitelist.
@@ -135,8 +135,8 @@ defmodule ExLibSRT.Server do
     according to SRT specification. Empty string (default) means no password authentication.
   * `:latency_ms` - SRT latency in milliseconds. Defaults to `-1`.
   * `:accept_mode` - Controls how the server accepts connections. See
-    [whitelist mode](#accepting-connections-whitelist-mode) and
-    [accept-all mode](#accepting-connections-accept-all-mode) for details.
+    [whitelist mode](#module-accepting-connections-whitelist-mode) and
+    [accept-all mode](#module-accepting-connections-accept-all-mode) for details.
     Valid values are:
     * `:accept_all` - Accept all connections regardless of stream ID.
     * `:whitelist` - Whitelist mode with an empty initial whitelist.
