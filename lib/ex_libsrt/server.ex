@@ -13,7 +13,8 @@ defmodule ExLibSRT.Server do
     notifications (`t:srt_server_conn_closed/0`) for a specific connection. Can be bound via
     `bind_with_process/3` or `bind_with_handler/3`.
 
-  ## Accepting connections — whitelist mode
+  ## Accepting connections
+  ### whitelist mode
   Each SRT connection can carry a `streamid` string which can be used for identifying the stream.
   When `accept_mode: :whitelist` or `accept_mode: {:whitelist, ids}` the server operates in
   **whitelist mode**: only connections whose `streamid` is present in the whitelist are accepted.
@@ -25,7 +26,7 @@ defmodule ExLibSRT.Server do
   When a client connects with a stream ID that is not on the whitelist, the server responds with
   rejection code `1403` (analogous to HTTP 403 Forbidden).
 
-  ## Accepting connections — accept-all mode
+  ### accept-all mode
   When `accept_mode: :accept_all` the server operates in **accept-all mode**:
   every incoming connection is accepted at the SRT level regardless of its stream ID.
 
@@ -74,10 +75,9 @@ defmodule ExLibSRT.Server do
 
   * `:password` - SRT passphrase for authentication. Must be between 10 and 79 characters long
     according to SRT specification. Empty string (default) means no password authentication.
-  * `:latency_ms` - SRT latency in milliseconds. Defaults to `-1`.
+  * `:latency_ms` - SRT latency in milliseconds, used to set [`SRTO_LATENCY` flag](https://github.com/Haivision/srt/blob/master/docs/API/API-socket-options.md#srto_latency). Defaults to `-1` (meaning that `SRTO_LATENCY` flag is not set).
   * `:accept_mode` - Controls how the server accepts connections. See
-    [whitelist mode](#module-accepting-connections-whitelist-mode) and
-    [accept-all mode](#module-accepting-connections-accept-all-mode) for details.
+    [whitelist mode](#module-accepting-connections) for details.
     Valid values are:
     * `:accept_all` - Accept all connections regardless of stream ID.
     * `:whitelist` - Whitelist mode with an empty initial whitelist.

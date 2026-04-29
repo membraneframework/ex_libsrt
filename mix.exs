@@ -35,7 +35,16 @@ defmodule ExLibSRT.MixProject do
         "GitHub" => @github_url,
         "Membrane Framework Homepage" => "https://membrane.stream"
       },
-      files: ["lib", "mix.exs", "README*", "LICENSE*", ".formatter.exs", "bundlex.exs", "c_src", "MIGRATION_v0_2.md"],
+      files: [
+        "lib",
+        "mix.exs",
+        "README*",
+        "LICENSE*",
+        ".formatter.exs",
+        "bundlex.exs",
+        "c_src",
+        "MIGRATION_v0_2.md"
+      ],
       exclude_patterns: [~r"c_src/.*/_generated.*"]
     ]
   end
