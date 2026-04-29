@@ -256,7 +256,12 @@ defmodule ExLibSRT.ServerTest do
       srt_port = Enum.random(10_000..20_000)
       udp_port = Enum.random(10_000..20_000)
 
-      {:ok, server} = Server.start("0.0.0.0", srt_port, "", -1, ["some_allowed_stream"], owner)
+      {:ok, server} =
+        Server.start("0.0.0.0", srt_port,
+          accept_mode: {:whitelist, ["some_allowed_stream"]},
+          owner: owner
+        )
+
       on_exit(fn -> Server.stop(server) end)
 
       proxy = Transmit.start_streaming_proxy(udp_port, srt_port, "unknown_stream_id")
@@ -297,25 +302,25 @@ defmodule ExLibSRT.ServerTest do
   describe "server password validation" do
     test "rejects too short password" do
       assert {:error, "SRT password must be at least 10 characters long", 0} =
-               Server.start_link("127.0.0.1", 8080, "short")
+               Server.start_link("127.0.0.1", 8080, password: "short")
     end
 
     test "rejects too long password" do
       long_password = String.duplicate("a", 80)
 
       assert {:error, "SRT password must be at most 79 characters long", 0} =
-               Server.start_link("127.0.0.1", 8080, long_password)
+               Server.start_link("127.0.0.1", 8080, password: long_password)
     end
 
     test "accepts valid password length" do
       valid_password = "validpassword123"
-      {:ok, server} = Server.start_link("127.0.0.1", 8080, valid_password)
+      {:ok, server} = Server.start_link("127.0.0.1", 8080, password: valid_password)
       assert is_pid(server)
       Server.stop(server)
     end
 
     test "accepts empty password (no auth)" do
-      {:ok, server} = Server.start_link("127.0.0.1", 8080, "")
+      {:ok, server} = Server.start_link("127.0.0.1", 8080, password: "")
       assert is_pid(server)
       Server.stop(server)
     end
@@ -341,7 +346,7 @@ defmodule ExLibSRT.ServerTest do
     udp_port = Enum.random(10_000..20_000)
     srt_port = Enum.random(10_000..20_000)
 
-    {:ok, server} = Server.start("0.0.0.0", srt_port, "", -1, nil)
+    {:ok, server} = Server.start("0.0.0.0", srt_port, accept_mode: :accept_all)
     on_exit(fn -> Server.stop(server) end)
 
     [udp_port: udp_port, srt_port: srt_port, server: server]

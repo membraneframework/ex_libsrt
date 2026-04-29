@@ -70,7 +70,7 @@ defmodule ExLibSRT.ClientServerCoopTest do
       parent = self()
 
       Task.start(fn ->
-        assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port, password)
+        assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port, password: password)
         Server.add_stream_id_to_whitelist(server, "auth_stream")
         send(parent, :server_running)
 
@@ -96,7 +96,7 @@ defmodule ExLibSRT.ClientServerCoopTest do
       parent = self()
 
       Task.start(fn ->
-        assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port, server_password)
+        assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port, password: server_password)
         send(parent, :server_running)
 
         receive do
@@ -124,7 +124,7 @@ defmodule ExLibSRT.ClientServerCoopTest do
       parent = self()
 
       Task.start(fn ->
-        assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port, server_password)
+        assert {:ok, server} = Server.start("127.0.0.1", ctx.srt_port, password: server_password)
         send(parent, :server_running)
 
         receive do

@@ -11,7 +11,7 @@ defmodule Server do
 
   @impl true
   def init(_args) do
-    {:ok, server} = ExLibSRT.Server.start("0.0.0.0", 12_000, "", -1, ["some_stream_id"])
+    {:ok, server} = ExLibSRT.Server.start("0.0.0.0", 12_000, accept_mode: {:whitelist, ["some_stream_id"]})
 
     {:ok, %{server: server, packets: 0}}
   end

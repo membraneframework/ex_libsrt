@@ -49,7 +49,7 @@ defmodule Server do
   def init(_args) do
     stream_ids = ["some_stream_id_1", "some_stream_id_2", "some_stream_id_3"]
 
-    {:ok, server} = ExLibSRT.Server.start("0.0.0.0", 12_000, "", -1, stream_ids, self())
+    {:ok, server} = ExLibSRT.Server.start("0.0.0.0", 12_000, accept_mode: {:whitelist, stream_ids}, owner: self())
 
     {:ok, server}
   end
