@@ -5,7 +5,7 @@ Below there is a description of changes that need to be implemented while migrat
 from v0.1.x.
 
 ## start() and start_link() signatures
-[`ExLibSRT.Server.start/3`](https://hexdocs.pm/ex_libsrt/0.2.0/ExLibSRT.Server.html#start/3) and [`start_link/3`](https://hexdocs.pm/ex_libsrt/0.2.0/ExLibSRT.Server.html#start_link/3) signatures have changed.
+`ExLibSRT.Server.start/3` and `start_link/3` signatures have changed.
 `password` and `latency_ms` options now need to be provided as a keyword list elements.
 Furthermore, a new option: `:accept_mode` was added - more information in [Connection handling](#connection-handling) section.
 
@@ -16,10 +16,10 @@ Furthermore, a new option: `:accept_mode` was added - more information in [Conne
 
 ## Connection handling
 
-The `{:srt_server_conn, <connection ID>, <stream ID>}` message is sent to the server's "owner" process (which can be specified by the `:owner` option of [`ExLibSRT.Server.start/3`](https://hexdocs.pm/ex_libsrt/0.2.0/ExLibSRT.Server.html#start/3) and [`ExLibSRT.Server.start_link/3`](https://hexdocs.pm/ex_libsrt/0.2.0/ExLibSRT.Server.html#start_link/3) functions).
-The old functions `ExLibSRT.Server.accept_awaiting_connect_request/1`, `ExLibSRT.Server.accept_awaiting_connect_request_with_handler/2` and `ExLibSRT.Server.reject_awaiting_connect_request/1` were removed since the connection
+The `{:srt_server_conn, <connection ID>, <stream ID>}` message is sent to the server's "owner" process (which can be specified by the `:owner` option of `ExLibSRT.Server.start/3` and `ExLibSRT.Server.start_link/3` functions).
+The old functions `ExLibSRT.Server.accept_awaiting_connect_request`, `ExLibSRT.Server.accept_awaiting_connect_request_with_handler` and `ExLibSRT.Server.reject_awaiting_connect_request` were removed since the connection
 is now either always accepted (with `accept_mode: :accept_all`) or accepted or rejected based on the `stream_id` (with `accept_mode: :whitelist` and `accept_mode: {:whitelist, <initial_whitelist>}`).
-After acceptance, the connection needs to be bound with a process or a handler module handling incoming data, which is done with [`ExLibSRT.Server.bind_with_process/3`](https://hexdocs.pm/ex_libsrt/0.2.0/ExLibSRT.Server.html#bind_with_process/3) and [`ExLibSRT.Server.bind_with_handler/3`](https://hexdocs.pm/ex_libsrt/0.2.0/ExLibSRT.Server.html#bind_with_handler/3) functions.
+After acceptance, the connection needs to be bound with a process or a handler module handling incoming data, which is done with `ExLibSRT.Server.bind_with_process/3` and `ExLibSRT.Server.bind_with_handler/3` functions.
 
 ```diff
 - receive do
@@ -35,7 +35,7 @@ After acceptance, the connection needs to be bound with a process or a handler m
 
 ## ConnectionHandler callbacks changes
 
-The `handle_connected/3` callback in [`ExLibSRT.Connection.Handler`](https://hexdocs.pm/ex_libsrt/0.2.0/ExLibSRT.Connection.Handler.html) was removed since now the connection handler is bound to an already connected client connection.
+The `handle_connected/3` callback in `ExLibSRT.Connection.Handler` was removed since now the connection handler is bound to an already connected client connection.
 
 ```diff
   @impl true

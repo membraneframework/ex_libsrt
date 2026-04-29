@@ -42,8 +42,7 @@ defmodule ExLibSRT.MixProject do
         "LICENSE*",
         ".formatter.exs",
         "bundlex.exs",
-        "c_src",
-        "MIGRATION_v0_2.md"
+        "c_src"
       ],
       exclude_patterns: [~r"c_src/.*/_generated.*"]
     ]
