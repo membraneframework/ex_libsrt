@@ -2,13 +2,21 @@ defmodule ExLibSRT.Server do
   @moduledoc """
   Implementation of the SRT server.
 
+  ## Glossary
+
+  * **Stream ID** — An optional string identifier carried by each SRT connection. Clients can specify
+    a stream ID when connecting, and the server can use it to identify and route connections.
+  * **Owner** — The process that receives notifications about new connections (`t:srt_server_conn/0`),
+    rejected connections (`{:srt_server_rejected_client, stream_id}`), and server errors
+    (`t:srt_server_error/0`).
+  * **Receiver** — The process that receives data messages (`t:srt_data/0`) and disconnection
+    notifications (`t:srt_server_conn_closed/0`) for a specific connection. Can be bound via
+    `bind_with_process/3` or `bind_with_handler/3`.
+
   ## Accepting connections — whitelist mode
   Each SRT connection can carry a `streamid` string which can be used for identifying the stream.
   When `accept_mode: :whitelist` or `accept_mode: {:whitelist, ids}` the server operates in
   **whitelist mode**: only connections whose `streamid` is present in the whitelist are accepted.
-  For each whitelisted stream ID a receiver process must be provided — this is the process that will
-  receive `t:srt_server_conn/0`, `t:srt_data/0`, and `t:srt_server_conn_closed/0` messages for
-  that stream.
 
   The whitelist can be supplied up-front via the `:accept_mode` option of `start/3` / `start_link/3`
   (e.g., `accept_mode: {:whitelist, stream_ids}`), and modified at runtime with
@@ -24,12 +32,9 @@ defmodule ExLibSRT.Server do
   In both modes the owner process receives a `t:srt_server_conn/0` message for each accepted
   connection. The owner then has **1 second** to call `bind_with_process/3` or
   `bind_with_handler/3` to register a receiver for that connection. If no binding happens within
-  1 second the connection is dropped.
+  1 second the connection is dropped and the owner receives `t:srt_server_conn_timeout/0`.
 
   The registered receiver will receive `t:srt_data/0` and `t:srt_server_conn_closed/0` messages.
-
-  If the owner does not call `bind_with_process/3` or `bind_with_handler/3` within 1 second,
-  the connection is dropped and the owner receives `t:srt_server_conn_timeout/0`.
 
   ## Password Authentication
 
@@ -70,12 +75,14 @@ defmodule ExLibSRT.Server do
   * `:password` - SRT passphrase for authentication. Must be between 10 and 79 characters long
     according to SRT specification. Empty string (default) means no password authentication.
   * `:latency_ms` - SRT latency in milliseconds. Defaults to `-1`.
-  * `:accept_mode` - Controls how the server accepts connections. Valid values are:
+  * `:accept_mode` - Controls how the server accepts connections. See
+    [whitelist mode](#accepting-connections-whitelist-mode) and
+    [accept-all mode](#accepting-connections-accept-all-mode) for details.
+    Valid values are:
     * `:accept_all` - Accept all connections regardless of stream ID.
     * `:whitelist` - Whitelist mode with an empty initial whitelist.
     * `{:whitelist, stream_ids}` - Whitelist mode with pre-populated stream IDs.
-    Defaults to `:whitelist`. In whitelist mode, the whitelist can be modified at runtime with
-    `add_stream_id_to_whitelist/2` and `remove_stream_id_from_whitelist/2`.
+    Defaults to `:whitelist`.
   * `:owner` - The process that receives `t:srt_server_conn/0` notifications for every accepted
     connection, as well as `{:srt_server_rejected_client, stream_id}` when a connection is rejected.
     Defaults to `self()`.
@@ -127,12 +134,14 @@ defmodule ExLibSRT.Server do
   * `:password` - SRT passphrase for authentication. Must be between 10 and 79 characters long
     according to SRT specification. Empty string (default) means no password authentication.
   * `:latency_ms` - SRT latency in milliseconds. Defaults to `-1`.
-  * `:accept_mode` - Controls how the server accepts connections. Valid values are:
+  * `:accept_mode` - Controls how the server accepts connections. See
+    [whitelist mode](#accepting-connections-whitelist-mode) and
+    [accept-all mode](#accepting-connections-accept-all-mode) for details.
+    Valid values are:
     * `:accept_all` - Accept all connections regardless of stream ID.
     * `:whitelist` - Whitelist mode with an empty initial whitelist.
     * `{:whitelist, stream_ids}` - Whitelist mode with pre-populated stream IDs.
-    Defaults to `:whitelist`. In whitelist mode, the whitelist can be modified at runtime with
-    `add_stream_id_to_whitelist/2` and `remove_stream_id_from_whitelist/2`.
+    Defaults to `:whitelist`.
   * `:owner` - The process that receives `t:srt_server_conn/0` notifications for every accepted
     connection, as well as `{:srt_server_rejected_client, stream_id}` when a connection is rejected.
     Defaults to `self()`.
