@@ -190,8 +190,7 @@ defmodule ExLibSRT.Server do
   """
   @spec stop(t()) :: :ok | {:error, reason :: String.t()}
   def stop(agent) do
-    server_ref = Agent.get(agent, & &1)
-    result = ExLibSRT.Native.stop_server(server_ref)
+    result = agent |> get_server() |> ExLibSRT.Native.stop_server()
     Agent.stop(agent)
     result
   end
@@ -205,7 +204,7 @@ defmodule ExLibSRT.Server do
   """
   @spec add_stream_id_to_whitelist(t(), String.t()) :: :ok | {:error, reason :: String.t()}
   def add_stream_id_to_whitelist(agent, stream_id) do
-    server_ref = Agent.get(agent, & &1)
+    server_ref = get_server(agent)
     ExLibSRT.Native.add_stream_id_to_whitelist(stream_id, server_ref)
   end
 
@@ -216,7 +215,7 @@ defmodule ExLibSRT.Server do
   """
   @spec remove_stream_id_from_whitelist(t(), String.t()) :: :ok | {:error, reason :: String.t()}
   def remove_stream_id_from_whitelist(agent, stream_id) do
-    server_ref = Agent.get(agent, & &1)
+    server_ref = get_server(agent)
     ExLibSRT.Native.remove_stream_id_from_whitelist(stream_id, server_ref)
   end
 
@@ -233,8 +232,7 @@ defmodule ExLibSRT.Server do
           :ok | {:error, reason :: String.t()}
   def bind_with_process(agent, conn_id, receiver \\ nil) do
     receiver = receiver || self()
-
-    server_ref = Agent.get(agent, & &1)
+    server_ref = get_server(agent)
 
     case ExLibSRT.Native.bind_with_process(conn_id, receiver, server_ref) do
       {:ok, _stream_id} -> :ok
@@ -251,9 +249,9 @@ defmodule ExLibSRT.Server do
   @spec bind_with_handler(t(), connection_id(), ExLibSRT.Connection.Handler.t()) ::
           {:ok, ExLibSRT.Connection.t()} | {:error, reason :: any()}
   def bind_with_handler(agent, conn_id, handler) do
-    with server_ref <- Agent.get(agent, & &1),
-         {:ok, conn_process} <- ExLibSRT.Connection.start(handler),
-         {:ok, _stream_id} <- ExLibSRT.Native.bind_with_process(conn_id, conn_process, server_ref) do
+    with {:ok, conn_process} <- ExLibSRT.Connection.start(handler),
+         {:ok, _stream_id} <-
+           ExLibSRT.Native.bind_with_process(conn_id, conn_process, get_server(agent)) do
       {:ok, conn_process}
     else
       {:error, _reason} = error ->
@@ -266,7 +264,7 @@ defmodule ExLibSRT.Server do
   """
   @spec close_server_connection(connection_id(), t()) :: :ok | {:error, reason :: String.t()}
   def close_server_connection(connection_id, agent) do
-    server_ref = Agent.get(agent, & &1)
+    server_ref = get_server(agent)
     ExLibSRT.Native.close_server_connection(connection_id, server_ref)
   end
 
@@ -276,7 +274,7 @@ defmodule ExLibSRT.Server do
   @spec read_socket_stats(connection_id(), t()) ::
           {:ok, ExLibSRT.SocketStats.t()} | {:error, reason :: String.t()}
   def read_socket_stats(connection_id, agent) do
-    server_ref = Agent.get(agent, & &1)
+    server_ref = get_server(agent)
     ExLibSRT.Native.read_server_socket_stats(connection_id, server_ref)
   end
 
@@ -301,4 +299,9 @@ defmodule ExLibSRT.Server do
   end
 
   defp validate_password(_password), do: {:error, "Password must be a string"}
+
+  @spec get_server(t()) :: reference()
+  defp get_server(agent) do
+    Agent.get(agent, & &1)
+  end
 end
