@@ -108,12 +108,8 @@ defmodule ExLibSRT.Client do
   def send_data(payload, _agent) when byte_size(payload) > 1316, do: {:error, :payload_too_large}
 
   def send_data(payload, agent) do
-    if Process.alive?(agent) do
-      client_ref = Agent.get(agent, & &1)
-      ExLibSRT.Native.send_client_data(payload, client_ref)
-    else
-      {:error, "Client is not active"}
-    end
+    client_ref = Agent.get(agent, & &1)
+    ExLibSRT.Native.send_client_data(payload, client_ref)
   end
 
   @doc """
@@ -122,12 +118,8 @@ defmodule ExLibSRT.Client do
   @spec read_socket_stats(t()) ::
           {:ok, ExLibSRT.SocketStats.t()} | {:error, reason :: String.t()}
   def read_socket_stats(agent) do
-    if Process.alive?(agent) do
-      client_ref = Agent.get(agent, & &1)
-      ExLibSRT.Native.read_client_socket_stats(client_ref)
-    else
-      {:error, "Client is not active"}
-    end
+    client_ref = Agent.get(agent, & &1)
+    ExLibSRT.Native.read_client_socket_stats(client_ref)
   end
 
   # Private functions

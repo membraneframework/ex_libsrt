@@ -1,6 +1,9 @@
 #include "srt_nif.h"
+#include "ex_libsrt/_generated/nif/srt_nif.h"
+#include "unifex/unifex.h"
 #include <cstdlib>
-#include <thread>
+#include <iterator>
+#include <unordered_set>
 #include <vector>
 
 #include <srt/srt.h>
@@ -8,7 +11,7 @@
 static void close_all_connections(State* state) {
   std::vector<int> conn_ids;
   {
-    std::shared_lock lock(state->conn_receivers_mutex);
+    std::lock_guard lock(state->conn_receivers_mutex);
     conn_ids.reserve(state->conn_receivers.size());
     for (const auto& entry : state->conn_receivers) {
       conn_ids.push_back(entry.first);
@@ -129,33 +132,25 @@ UNIFEX_TERM start_server(UnifexEnv* env,
                          char* address,
                          int port,
                          char* password,
-                         int latency_ms) {
+                         int latency_ms,
+                         int accept_all,
+                         char** stream_ids_whitelist,
+                         unsigned int stream_ids_whitelist_length,
+                         UnifexPid owner) {
   State* state = unifex_alloc_state(env);
   state = new (state) State();
 
   try {
     state->env = unifex_alloc_env(env);
-    if (!unifex_self(env, &state->owner)) {
-      throw std::runtime_error("failed to create native state");
-    };
+    state->owner = owner;
 
     state->server = std::make_unique<Server>();
-
-    state->server->SetOnSocketConnected(
-        [=](Server::SrtSocket socket, const std::string& stream_id) {
-          std::lock_guard lock(state->conn_receivers_mutex);
-
-          if (auto it = state->conn_receivers.find(socket); it != std::end(state->conn_receivers)) {
-            send_srt_server_conn(
-                state->env, it->second, 1, socket, stream_id.c_str());
-          }
-
-        });
 
     state->server->SetOnSocketDisconnected([=](Server::SrtSocket socket) {
       std::lock_guard lock(state->conn_receivers_mutex);
 
-      if (auto it = state->conn_receivers.find(socket); it != std::end(state->conn_receivers)) {
+      if (auto it = state->conn_receivers.find(socket);
+          it != std::end(state->conn_receivers)) {
         send_srt_server_conn_closed(state->env, it->second, 1, socket);
       }
 
@@ -172,8 +167,9 @@ UNIFEX_TERM start_server(UnifexEnv* env,
           memcpy(payload->data, data, len);
 
           {
-            std::unique_lock lock(state->conn_receivers_mutex);
-            if (auto it = state->conn_receivers.find(socket); it != std::end(state->conn_receivers)) {
+            std::lock_guard lock(state->conn_receivers_mutex);
+            if (auto it = state->conn_receivers.find(socket);
+                it != std::end(state->conn_receivers)) {
               // TODO: make sure that the message has been properly sent
               send_srt_data(state->env, it->second, 1, socket, payload);
             }
@@ -184,13 +180,32 @@ UNIFEX_TERM start_server(UnifexEnv* env,
           unifex_free(payload);
         });
 
-    state->server->SetOnConnectRequest(
-        [=](const std::string& address, const std::string& stream_id) {
-          send_srt_server_connect_request(
-              state->env, state->owner, 1, address.c_str(), stream_id.c_str());
+    state->server->SetOnClientRejected([=](const char* stream_id) {
+      send_srt_server_rejected_client(state->env, state->owner, 1, stream_id);
+    });
+
+    state->server->SetOnClientPending(
+        [=](Server::SrtSocket socket, const std::string& stream_id) {
+          send_srt_server_conn(
+              state->env, state->owner, 1, socket, stream_id.c_str());
         });
 
-    state->server->Run(std::string(address), port, std::string(password), latency_ms);
+    state->server->SetOnConnectionTimeout(
+        [=](Server::SrtSocket socket, const std::string& stream_id) {
+          send_srt_server_conn_timeout(
+              state->env, state->owner, 1, socket, stream_id.c_str());
+        });
+
+    std::unordered_set<std::string> stream_ids_whitelist_set(
+        stream_ids_whitelist,
+        stream_ids_whitelist + stream_ids_whitelist_length);
+
+    state->server->Run(std::string(address),
+                       port,
+                       std::string(password),
+                       latency_ms,
+                       static_cast<bool>(accept_all),
+                       std::move(stream_ids_whitelist_set));
 
     UNIFEX_TERM result = start_server_result_ok(env, state);
     unifex_release_state(env, state);
@@ -203,22 +218,46 @@ UNIFEX_TERM start_server(UnifexEnv* env,
   }
 }
 
-UNIFEX_TERM accept_awaiting_connect_request(UnifexEnv *env, UnifexPid receiver,
-                                            UnifexState *state) {
-  if (state->server == nullptr) {
-    return accept_awaiting_connect_request_result_error(env, "Server is not active");
-  }
-
-  auto id = state->server->GetAwaitingConnectionRequestId();
-  state->server->AnswerConnectRequest(true);
-
-  std::lock_guard lock(state->conn_receivers_mutex);
-  state->conn_receivers.insert({id, receiver});
-
-  return accept_awaiting_connect_request_result_ok(env);
+UNIFEX_TERM add_stream_id_to_whitelist(UnifexEnv* env,
+                                       char* stream_id,
+                                       UnifexState* state) {
+  state->server->AddStreamIdToWhitelist(stream_id);
+  return add_stream_id_to_whitelist_result_ok(env);
 }
 
-UNIFEX_TERM read_server_socket_stats(UnifexEnv* env, int conn_id, UnifexState* state) {
+UNIFEX_TERM remove_stream_id_from_whitelist(UnifexEnv* env,
+                                            char* stream_id,
+                                            UnifexState* state) {
+  state->server->RemoveStreamIdFromWhitelist(stream_id);
+  return remove_stream_id_from_whitelist_result_ok(env);
+}
+
+UNIFEX_TERM bind_with_process(UnifexEnv* env,
+                              int conn_id,
+                              UnifexPid receiver,
+                              UnifexState* state) {
+  if (state->server == nullptr) {
+    return bind_with_process_result_error(env, "Server is not active");
+  }
+
+  {
+    std::lock_guard lock(state->conn_receivers_mutex);
+    state->conn_receivers.insert({conn_id, receiver});
+  }
+
+  std::string stream_id;
+  if (!state->server->BindSocket(conn_id, stream_id)) {
+    std::lock_guard lock(state->conn_receivers_mutex);
+    state->conn_receivers.erase(conn_id);
+    return bind_with_process_result_error(env,
+                                          "Connection not found or timed out");
+  }
+
+  return bind_with_process_result_ok(env, stream_id.c_str());
+}
+
+UNIFEX_TERM
+read_server_socket_stats(UnifexEnv* env, int conn_id, UnifexState* state) {
   if (state->server == nullptr) {
     return read_server_socket_stats_result_error(env, "Server is not active");
   }
@@ -232,18 +271,6 @@ UNIFEX_TERM read_server_socket_stats(UnifexEnv* env, int conn_id, UnifexState* s
 
   return read_server_socket_stats_result_ok(env, srt_stats);
 }
-
-UNIFEX_TERM reject_awaiting_connect_request(UnifexEnv* env,
-                                            UnifexState* state) {
-  if (state->server == nullptr) {
-    return accept_awaiting_connect_request_result_error(env, "Server is not active");
-  }
-
-  state->server->AnswerConnectRequest(false);
-
-  return accept_awaiting_connect_request_result_ok(env);
-}
-
 
 UNIFEX_TERM stop_server(UnifexEnv* env, UnifexState* state) {
   if (state->server == nullptr) {
@@ -260,7 +287,7 @@ UNIFEX_TERM stop_server(UnifexEnv* env, UnifexState* state) {
 UNIFEX_TERM
 close_server_connection(UnifexEnv* env, int conn_id, UnifexState* state) {
   if (state->server == nullptr) {
-    return accept_awaiting_connect_request_result_error(env, "Server is not active");
+    return close_server_connection_result_error(env, "Server is not active");
   }
 
   if (state->server) {
@@ -321,12 +348,11 @@ start_client(UnifexEnv* env,
   }
 }
 
-
 UNIFEX_TERM
 send_client_data(UnifexEnv* env, UnifexPayload* payload, UnifexState* state) {
   if (state->client == nullptr) {
     return send_client_data_result_error(env, "Client is not active");
-  } 
+  }
 
   try {
     auto buffer = std::unique_ptr<char[]>(new char[payload->size]);
@@ -348,7 +374,8 @@ UNIFEX_TERM read_client_socket_stats(UnifexEnv* env, UnifexState* state) {
 
   auto stats = state->client->ReadSocketStats(true);
   if (!stats) {
-    return read_client_socket_stats_result_error(env, "Failed to read client socket stats");
+    return read_client_socket_stats_result_error(
+        env, "Failed to read client socket stats");
   }
 
   auto srt_stats = map_socket_stats(stats.get());

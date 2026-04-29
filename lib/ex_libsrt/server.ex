@@ -2,18 +2,40 @@ defmodule ExLibSRT.Server do
   @moduledoc """
   Implementation of the SRT server.
 
-  ## API
-  The client API consinsts of the following functions:
+  ## Glossary
 
-  * `start/2` - starts the server
-  * `start/3` - starts the server with password authentication
-  * `start_link/2` - starts the server and links to current process
-  * `start_link/3` - starts the server with password authentication and links to current process
-  * `start_link/4` - starts the server with password authentication, sets SRT latency and links to current process
-  * `stop/1` - stops the server
-  * `accept_awaiting_connect_request/1` - accepts next incoming connection
-  * `reject_awaiting_connect_request/1` - rejects next incoming connection
-  * `close_server_connection/2` - stops server's connection to given client
+  * **Stream ID** — An optional string identifier carried by each SRT connection. Clients can specify
+    a stream ID when connecting, and the server can use it to identify and route connections.
+  * **Owner** — The process that receives notifications about new connections (`t:srt_server_conn/0`),
+    rejected connections (`{:srt_server_rejected_client, stream_id}`), and server errors
+    (`t:srt_server_error/0`).
+  * **Receiver** — The process that receives data messages (`t:srt_data/0`) and disconnection
+    notifications (`t:srt_server_conn_closed/0`) for a specific connection. Can be bound via
+    `bind_with_process/3` or `bind_with_handler/3`.
+
+  ## Accepting connections
+  ### whitelist mode
+  Each SRT connection can carry a `streamid` string which can be used for identifying the stream.
+  When `accept_mode: :whitelist` or `accept_mode: {:whitelist, ids}` the server operates in
+  **whitelist mode**: only connections whose `streamid` is present in the whitelist are accepted.
+
+  The whitelist can be supplied up-front via the `:accept_mode` option of `start/3` / `start_link/3`
+  (e.g., `accept_mode: {:whitelist, stream_ids}`), and modified at runtime with
+  `add_stream_id_to_whitelist/2` and `remove_stream_id_from_whitelist/2`.
+
+  When a client connects with a stream ID that is not on the whitelist, the server responds with
+  rejection code `1403` (analogous to HTTP 403 Forbidden).
+
+  ### accept-all mode
+  When `accept_mode: :accept_all` the server operates in **accept-all mode**:
+  every incoming connection is accepted at the SRT level regardless of its stream ID.
+
+  In both modes the owner process receives a `t:srt_server_conn/0` message for each accepted
+  connection. The owner then has **1 second** to call `bind_with_process/3` or
+  `bind_with_handler/3` to register a receiver for that connection. If no binding happens within
+  1 second the connection is dropped and the owner receives `t:srt_server_conn_timeout/0`.
+
+  The registered receiver will receive `t:srt_data/0` and `t:srt_server_conn_closed/0` messages.
 
   ## Password Authentication
 
@@ -27,24 +49,6 @@ defmodule ExLibSRT.Server do
   * `t:srt_server_conn_closed/0` - a client connection has been closed
   * `t:srt_server_error/0` - server has encountered an error
   * `t:srt_data/0` - server has received new data on a client connection
-  * `t:srt_server_connect_request/0` - server has triggered a new connection request
-    (see `accept_awaiting_connect_request/1` and `reject_awaiting_connect_request/1` for answering the request)
-
-  ### Accepting connections
-  Each SRT connection can carry a `streamid` string which can be used for identifying the stream.
-
-  To support accepting/rejecting the connection a server sends `t:srt_server_connect_request/0` event.
-  THe process that started the server is then obliged to either call  `accept_awaiting_connect_request/1` or `reject_awaiting_connect_request/1`.
-  Not responding in time will result in server's rejecting the connection.
-
-  When user rejects the stream, the server respons with `1403` rejection code (SRT wise). While not being to accept in time
-  results in `1504` (not that the codes respectively are the same of HTTP 403 forbidden and 504 gateway timeout).
-
-  > #### Response timeout {: .warning}
-  >
-  > It is very important to answer the connection request as fast as possible.
-  > Due to how `libsrt` works, while the server waits for the response it blocks the receiving thread
-  > and potentially interrupts other ongoing connections.
   """
 
   use Agent
@@ -53,33 +57,66 @@ defmodule ExLibSRT.Server do
 
   @type connection_id :: non_neg_integer()
 
+  @type accept_mode :: :accept_all | :whitelist | {:whitelist, [String.t()]}
+
   @type srt_server_conn :: {:srt_server_conn, connection_id(), stream_id :: String.t()}
   @type srt_server_conn_closed :: {:srt_server_conn_closed, connection_id()}
   @type srt_server_error :: {:srt_server_error, connection_id(), error :: String.t()}
   @type srt_data :: {:srt_data, connection_id(), data :: binary()}
-  @type srt_server_connect_request ::
-          {:srt_server_connect_request, address :: String.t(), stream_id :: String.t()}
+  @type srt_server_conn_timeout ::
+          {:srt_server_conn_timeout, connection_id(), stream_id :: String.t()}
 
   @doc """
   Starts a new SRT server binding to given address and port and links to current process.
 
   One may usually want to bind to `0.0.0.0` address.
 
-  ## Password Requirements
+  ## Options
 
-  If a password is provided, it must be between 10 and 79 characters long according to SRT specification.
-  An empty string means no password authentication will be used.
+  * `:password` - SRT passphrase for authentication. Must be between 10 and 79 characters long
+    according to SRT specification. Empty string (default) means no password authentication.
+  * `:latency_ms` - SRT latency in milliseconds, used to set [`SRTO_LATENCY` flag](https://github.com/Haivision/srt/blob/master/docs/API/API-socket-options.md#srto_latency). Defaults to `-1` (meaning that `SRTO_LATENCY` flag is not set).
+  * `:accept_mode` - Controls how the server accepts connections. See
+    [whitelist mode](#module-accepting-connections) for details.
+    Valid values are:
+    * `:accept_all` - Accept all connections regardless of stream ID.
+    * `:whitelist` - Whitelist mode with an empty initial whitelist.
+    * `{:whitelist, stream_ids}` - Whitelist mode with pre-populated stream IDs.
+    Defaults to `:whitelist`.
+  * `:owner` - The process that receives `t:srt_server_conn/0` notifications for every accepted
+    connection, as well as `{:srt_server_rejected_client, stream_id}` when a connection is rejected.
+    Defaults to `self()`.
   """
   @spec start_link(
           address :: String.t(),
           port :: non_neg_integer(),
-          password :: String.t(),
-          latency_ms :: integer()
+          opts :: keyword()
         ) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
-  def start_link(address, port, password \\ "", latency_ms \\ -1) do
+  def start_link(address, port, opts \\ []) do
+    password = Keyword.get(opts, :password, "")
+    latency_ms = Keyword.get(opts, :latency_ms, -1)
+    accept_mode = Keyword.get(opts, :accept_mode, :whitelist)
+    owner = Keyword.get(opts, :owner) || self()
+
+    {accept_all, allowed_stream_ids} =
+      case accept_mode do
+        :accept_all -> {true, []}
+        :whitelist -> {false, []}
+        {:whitelist, ids} -> {false, ids}
+      end
+
     with :ok <- validate_password(password),
-         {:ok, server_ref} <- ExLibSRT.Native.start_server(address, port, password, latency_ms) do
+         {:ok, server_ref} <-
+           ExLibSRT.Native.start_server(
+             address,
+             port,
+             password,
+             latency_ms,
+             accept_all,
+             allowed_stream_ids || [],
+             owner
+           ) do
       Agent.start_link(fn -> server_ref end)
     else
       {:error, reason, error_code} -> {:error, reason, error_code}
@@ -92,18 +129,53 @@ defmodule ExLibSRT.Server do
 
   One may usually want to bind to `0.0.0.0` address.
 
-  ## Password Requirements
+  ## Options
 
-  If a password is provided, it must be between 10 and 79 characters long according to SRT specification.
-  An empty string means no password authentication will be used.
+  * `:password` - SRT passphrase for authentication. Must be between 10 and 79 characters long
+    according to SRT specification. Empty string (default) means no password authentication.
+  * `:latency_ms` - SRT latency in milliseconds. Defaults to `-1`.
+  * `:accept_mode` - Controls how the server accepts connections. See
+    [whitelist mode](#module-accepting-connections-whitelist-mode) and
+    [accept-all mode](#module-accepting-connections-accept-all-mode) for details.
+    Valid values are:
+    * `:accept_all` - Accept all connections regardless of stream ID.
+    * `:whitelist` - Whitelist mode with an empty initial whitelist.
+    * `{:whitelist, stream_ids}` - Whitelist mode with pre-populated stream IDs.
+    Defaults to `:whitelist`.
+  * `:owner` - The process that receives `t:srt_server_conn/0` notifications for every accepted
+    connection, as well as `{:srt_server_rejected_client, stream_id}` when a connection is rejected.
+    Defaults to `self()`.
   """
-  @spec start(address :: String.t(), port :: non_neg_integer()) ::
+  @spec start(
+          address :: String.t(),
+          port :: non_neg_integer(),
+          opts :: keyword()
+        ) ::
           {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
-  @spec start(address :: String.t(), port :: non_neg_integer(), password :: String.t()) ::
-          {:ok, t()} | {:error, reason :: String.t(), error_code :: integer()}
-  def start(address, port, password \\ "") do
+  def start(address, port, opts \\ []) do
+    password = Keyword.get(opts, :password, "")
+    latency_ms = Keyword.get(opts, :latency_ms, -1)
+    accept_mode = Keyword.get(opts, :accept_mode, :whitelist)
+    owner = Keyword.get(opts, :owner) || self()
+
+    {accept_all, allowed_stream_ids} =
+      case accept_mode do
+        :accept_all -> {true, []}
+        :whitelist -> {false, []}
+        {:whitelist, ids} -> {false, ids}
+      end
+
     with :ok <- validate_password(password),
-         {:ok, server_ref} <- ExLibSRT.Native.start_server(address, port, password, -1) do
+         {:ok, server_ref} <-
+           ExLibSRT.Native.start_server(
+             address,
+             port,
+             password,
+             latency_ms,
+             accept_all,
+             allowed_stream_ids || [],
+             owner
+           ) do
       Agent.start(fn -> server_ref end, name: {:global, server_ref})
     else
       {:error, reason, error_code} -> {:error, reason, error_code}
@@ -118,56 +190,72 @@ defmodule ExLibSRT.Server do
   """
   @spec stop(t()) :: :ok | {:error, reason :: String.t()}
   def stop(agent) do
-    server_ref = Agent.get(agent, & &1)
-    result = ExLibSRT.Native.stop_server(server_ref)
+    result = agent |> get_server() |> ExLibSRT.Native.stop_server()
     Agent.stop(agent)
     result
   end
 
   @doc """
-  Acccepts the currently awaiting connection request.
+  Adds a stream ID to the server's whitelist at runtime.
+
+  Once added, connections carrying this stream ID will be accepted and the owner will receive
+  `t:srt_server_conn/0`. Call `bind_with_process/3` or `bind_with_handler/3` to register
+  a receiver.
   """
-  @spec accept_awaiting_connect_request(t()) :: :ok | {:error, reason :: String.t()}
-  def accept_awaiting_connect_request(agent) do
-    if Process.alive?(agent) do
-      server_ref = Agent.get(agent, & &1)
-      ExLibSRT.Native.accept_awaiting_connect_request(self(), server_ref)
-    else
-      {:error, "Server is not active"}
+  @spec add_stream_id_to_whitelist(t(), String.t()) :: :ok | {:error, reason :: String.t()}
+  def add_stream_id_to_whitelist(agent, stream_id) do
+    server_ref = get_server(agent)
+    ExLibSRT.Native.add_stream_id_to_whitelist(stream_id, server_ref)
+  end
+
+  @doc """
+  Removes a stream ID from the server's whitelist at runtime.
+
+  After removal, new connections carrying that stream ID will be rejected.
+  """
+  @spec remove_stream_id_from_whitelist(t(), String.t()) :: :ok | {:error, reason :: String.t()}
+  def remove_stream_id_from_whitelist(agent, stream_id) do
+    server_ref = get_server(agent)
+    ExLibSRT.Native.remove_stream_id_from_whitelist(stream_id, server_ref)
+  end
+
+  @doc """
+  Registers the given process (defaults to `self()`) as the receiver for a pending connection.
+
+  Must be called within 1 second of receiving `t:srt_server_conn/0`, otherwise the connection
+  will have been dropped. Returns `{:error, reason}` if the connection ID is not found.
+
+  After a successful bind the receiver will receive `t:srt_data/0` and
+  `t:srt_server_conn_closed/0` messages for the connection.
+  """
+  @spec bind_with_process(t(), connection_id(), pid() | nil) ::
+          :ok | {:error, reason :: String.t()}
+  def bind_with_process(agent, conn_id, receiver \\ nil) do
+    receiver = receiver || self()
+    server_ref = get_server(agent)
+
+    case ExLibSRT.Native.bind_with_process(conn_id, receiver, server_ref) do
+      {:ok, _stream_id} -> :ok
+      error -> error
     end
   end
 
   @doc """
-  Acccepts the currently awaiting connection request and starts a separate connection process
+  Spawns an `ExLibSRT.Connection` process backed by `handler` and binds it to a pending
+  connection.
+
+  Must be called within 1 second of receiving `t:srt_server_conn/0`.
   """
-  @spec accept_awaiting_connect_request_with_handler(ExLibSRT.Connection.Handler.t(), t()) ::
+  @spec bind_with_handler(t(), connection_id(), ExLibSRT.Connection.Handler.t()) ::
           {:ok, ExLibSRT.Connection.t()} | {:error, reason :: any()}
-  def accept_awaiting_connect_request_with_handler(handler, agent) do
-    with true <- Process.alive?(agent),
-         server_ref = Agent.get(agent, & &1),
-         {:ok, handler} <- ExLibSRT.Connection.start(handler),
-         :ok <- ExLibSRT.Native.accept_awaiting_connect_request(handler, server_ref) do
-      {:ok, handler}
+  def bind_with_handler(agent, conn_id, handler) do
+    with {:ok, conn_process} <- ExLibSRT.Connection.start(handler),
+         {:ok, _stream_id} <-
+           ExLibSRT.Native.bind_with_process(conn_id, conn_process, get_server(agent)) do
+      {:ok, conn_process}
     else
-      false ->
-        {:error, "Server is not active"}
-
       {:error, _reason} = error ->
-        ExLibSRT.Connection.stop(handler)
         error
-    end
-  end
-
-  @doc """
-  Rejects the currently awaiting connection request.
-  """
-  @spec reject_awaiting_connect_request(t()) :: :ok | {:error, reason :: String.t()}
-  def reject_awaiting_connect_request(agent) do
-    if Process.alive?(agent) do
-      server_ref = Agent.get(agent, & &1)
-      ExLibSRT.Native.reject_awaiting_connect_request(server_ref)
-    else
-      {:error, "Server is not active"}
     end
   end
 
@@ -176,12 +264,8 @@ defmodule ExLibSRT.Server do
   """
   @spec close_server_connection(connection_id(), t()) :: :ok | {:error, reason :: String.t()}
   def close_server_connection(connection_id, agent) do
-    if Process.alive?(agent) do
-      server_ref = Agent.get(agent, & &1)
-      ExLibSRT.Native.close_server_connection(connection_id, server_ref)
-    else
-      {:error, "Server is not active"}
-    end
+    server_ref = get_server(agent)
+    ExLibSRT.Native.close_server_connection(connection_id, server_ref)
   end
 
   @doc """
@@ -190,12 +274,8 @@ defmodule ExLibSRT.Server do
   @spec read_socket_stats(connection_id(), t()) ::
           {:ok, ExLibSRT.SocketStats.t()} | {:error, reason :: String.t()}
   def read_socket_stats(connection_id, agent) do
-    if Process.alive?(agent) do
-      server_ref = Agent.get(agent, & &1)
-      ExLibSRT.Native.read_server_socket_stats(connection_id, server_ref)
-    else
-      {:error, "Server is not active"}
-    end
+    server_ref = get_server(agent)
+    ExLibSRT.Native.read_server_socket_stats(connection_id, server_ref)
   end
 
   # Private functions
@@ -219,4 +299,9 @@ defmodule ExLibSRT.Server do
   end
 
   defp validate_password(_password), do: {:error, "Password must be a string"}
+
+  @spec get_server(t()) :: reference()
+  defp get_server(agent) do
+    Agent.get(agent, & &1)
+  end
 end

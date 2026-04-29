@@ -21,11 +21,6 @@ defmodule ExLibSRT.Connection do
     @callback init(t()) :: state()
 
     @doc """
-    Invoked when a connection gets fully established.
-    """
-    @callback handle_connected(connection_id(), stream_id(), state()) :: {:ok, state} | :stop
-
-    @doc """
     Invoked when a connection gets disconnected .
     """
     @callback handle_disconnected(state) :: :ok
@@ -63,17 +58,6 @@ defmodule ExLibSRT.Connection do
   @impl true
   def handle_info({:srt_data, _conn_id, data}, state) do
     case state.handler.handle_data(data, state.handler_state) do
-      {:ok, handler_state} ->
-        {:noreply, %{state | handler_state: handler_state}}
-
-      :stop ->
-        {:stop, :normal, state}
-    end
-  end
-
-  @impl true
-  def handle_info({:srt_server_conn, conn, stream_id}, state) do
-    case state.handler.handle_connected(conn, stream_id, state.handler_state) do
       {:ok, handler_state} ->
         {:noreply, %{state | handler_state: handler_state}}
 
