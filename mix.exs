@@ -1,7 +1,7 @@
 defmodule ExLibSRT.MixProject do
   use Mix.Project
 
-  @version "0.1.7"
+  @version "0.2.0"
   @github_url "https://github.com/membraneframework/ex_libsrt"
 
   def project do
@@ -35,7 +35,7 @@ defmodule ExLibSRT.MixProject do
         "GitHub" => @github_url,
         "Membrane Framework Homepage" => "https://membrane.stream"
       },
-      files: ["lib", "mix.exs", "README*", "LICENSE*", ".formatter.exs", "bundlex.exs", "c_src"],
+      files: ["lib", "mix.exs", "README*", "LICENSE*", ".formatter.exs", "bundlex.exs", "c_src", "MIGRATION_v0_2.md"],
       exclude_patterns: [~r"c_src/.*/_generated.*"]
     ]
   end
@@ -43,7 +43,7 @@ defmodule ExLibSRT.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "LICENSE"],
+      extras: ["README.md", "LICENSE", "MIGRATION_v0_2.md"],
       formatters: ["html"],
       source_ref: "v#{@version}",
       nest_modules_by_prefix: [ExLibSRT]
