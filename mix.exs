@@ -1,7 +1,7 @@
 defmodule ExLibSRT.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.2.1"
   @github_url "https://github.com/membraneframework/ex_libsrt"
 
   def project do
@@ -21,7 +21,8 @@ defmodule ExLibSRT.MixProject do
       name: "ExLibSRT",
       source_url: @github_url,
       docs: docs(),
-      homepage_url: "https://membrane.stream"
+      homepage_url: "https://membrane.stream",
+      aliases: [docs: ["docs", &prepend_llms_links/1]]
     ]
   end
 
@@ -67,7 +68,6 @@ defmodule ExLibSRT.MixProject do
     [
       main: "readme",
       extras: ["README.md", "LICENSE", "MIGRATION_v0_2.md"],
-      formatters: ["html"],
       source_ref: "v#{@version}",
       nest_modules_by_prefix: [ExLibSRT]
     ]
@@ -85,7 +85,29 @@ defmodule ExLibSRT.MixProject do
       {:membrane_precompiled_dependency_provider, "~> 0.2.0"},
       {:credo, ">= 0.0.0", only: :dev, runtime: false},
       {:dialyxir, ">= 0.0.0", only: :dev, runtime: false},
-      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.40", only: :dev, runtime: false}
     ]
+  end
+
+  defp prepend_llms_links(_) do
+    output_dir = docs()[:output] || "doc"
+    path = Path.join(output_dir, "llms.txt")
+
+    if File.exists?(path) do
+      existing = File.read!(path)
+
+      footer = """
+
+
+      ## See Also
+
+      - [Membrane Framework AI Skill](https://hexdocs.pm/membrane_core/skill.md)
+      - [Membrane Core](https://hexdocs.pm/membrane_core/llms.txt)
+      """
+
+      File.write!(path, String.trim_trailing(existing) <> footer)
+    else
+      IO.warn("#{path} not found — llms.txt was not generated, check your ex_doc configuration")
+    end
   end
 end
