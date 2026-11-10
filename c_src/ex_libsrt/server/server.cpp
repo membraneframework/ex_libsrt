@@ -144,24 +144,36 @@ void Server::RunEpoll() {
                            &sockets_len,
                            broken_sockets.data(),
                            &broken_sockets_len,
-                           1000,
+                           EPOLL_WAIT_TIMEOUT_MS,
                            0,
                            0,
                            0,
                            0);
 
     if (n < 1) {
-      // clear out the time out error
+      // clear out the time out error, and still sweep the pending
+      // connections below
       srt_clearlasterror();
-
-      continue;
+      sockets_len = 0;
+      broken_sockets_len = 0;
     }
 
     for (int i = 0; i < sockets_len; i++) {
       auto socket_state = srt_getsockstate(sockets[i]);
 
       if (socket_state == SRTS_LISTENING) {
-        // do nothing
+        // The listen callback has already handed us the new socket, but it
+        // also waits in the listener's accept queue until srt_accept takes
+        // it. Left there, it keeps the listener readable, and
+        // srt_epoll_wait returns at once, for ever. Take one per event; while
+        // more are queued, the listener stays readable.
+        sockaddr_storage addr;
+        int addr_len = sizeof addr;
+        if (srt_accept(sockets[i],
+                       reinterpret_cast<sockaddr*>(&addr),
+                       &addr_len) == SRT_INVALID_SOCK) {
+          srt_clearlasterror();
+        }
       } else if (socket_state == SRTS_BROKEN || socket_state == SRTS_CLOSED) {
         DisconnectSocket(sockets[i]);
       } else if (socket_state == SRTS_CONNECTED) {
