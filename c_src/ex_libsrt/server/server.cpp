@@ -311,7 +311,13 @@ void Server::DisconnectSocket(Server::SrtSocket socket) {
   {
     std::lock_guard lock(active_sockets_mutex);
     if (active_sockets.erase(socket) == 0) {
-      // already closed by CloseConnection
+      // Either CloseConnection got here first, and it removes the socket from the
+      // epoll and closes it itself, or this is the listening socket, which is in
+      // the epoll but never in active_sockets. Drop a broken listener from the
+      // epoll so it can't keep waking the loop; Stop closes it.
+      if (IsListeningSocket(socket)) {
+        srt_epoll_remove_usock(epoll, socket);
+      }
       return;
     }
   }
