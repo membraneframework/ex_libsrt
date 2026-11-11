@@ -320,18 +320,13 @@ start_client(UnifexEnv* env,
 
     state->client = std::make_unique<Client>(10, 200);
 
-    state->client->SetOnSocketConnected([=]() {
-      std::lock_guard send_lock(state->send_mutex);
-      send_srt_client_connected(state->env, state->owner, 1);
-    });
+    state->client->SetOnSocketConnected(
+        [=]() { send_srt_client_connected(state->env, state->owner, 1); });
 
-    state->client->SetOnSocketDisconnected([=]() {
-      std::lock_guard send_lock(state->send_mutex);
-      send_srt_client_disconnected(state->env, state->owner, 1);
-    });
+    state->client->SetOnSocketDisconnected(
+        [=]() { send_srt_client_disconnected(state->env, state->owner, 1); });
 
     state->client->SetOnSocketError([=](const std::string& reason) {
-      std::lock_guard send_lock(state->send_mutex);
       send_srt_client_error(state->env, state->owner, 1, reason.c_str());
     });
 
