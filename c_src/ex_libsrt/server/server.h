@@ -117,7 +117,7 @@ private:
   std::thread epoll_loop;
 
 private:
-  // touched by the epoll thread, the listener callback and NIF threads
+  // touched by the epoll thread and NIF threads
   std::set<SrtSocket> active_sockets;
   std::mutex active_sockets_mutex;
   std::function<void(SrtSocket)> on_socket_disconnected;
