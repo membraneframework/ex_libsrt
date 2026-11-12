@@ -221,6 +221,10 @@ UNIFEX_TERM start_server(UnifexEnv* env,
 UNIFEX_TERM add_stream_id_to_whitelist(UnifexEnv* env,
                                        char* stream_id,
                                        UnifexState* state) {
+  if (state->server == nullptr) {
+    return add_stream_id_to_whitelist_result_error(env, "Server is not active");
+  }
+
   state->server->AddStreamIdToWhitelist(stream_id);
   return add_stream_id_to_whitelist_result_ok(env);
 }
@@ -228,6 +232,11 @@ UNIFEX_TERM add_stream_id_to_whitelist(UnifexEnv* env,
 UNIFEX_TERM remove_stream_id_from_whitelist(UnifexEnv* env,
                                             char* stream_id,
                                             UnifexState* state) {
+  if (state->server == nullptr) {
+    return remove_stream_id_from_whitelist_result_error(env,
+                                                        "Server is not active");
+  }
+
   state->server->RemoveStreamIdFromWhitelist(stream_id);
   return remove_stream_id_from_whitelist_result_ok(env);
 }

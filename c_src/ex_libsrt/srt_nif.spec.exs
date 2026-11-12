@@ -65,9 +65,9 @@ callback :unload, :on_unload
 
 spec start_server(host :: string, port :: int, password :: string, latency_ms :: int, accept_all :: bool, stream_ids_whitelist :: [string], owner :: pid) :: {:ok :: label, state} | {:error :: label, reason :: string}
 
-spec add_stream_id_to_whitelist(stream_id :: string, state) :: (:ok :: label)
+spec add_stream_id_to_whitelist(stream_id :: string, state) :: (:ok :: label) | {:error :: label, reason :: string}
 
-spec remove_stream_id_from_whitelist(stream_id :: string, state) :: (:ok :: label)
+spec remove_stream_id_from_whitelist(stream_id :: string, state) :: (:ok :: label) | {:error :: label, reason :: string}
 
 spec read_server_socket_stats(conn_id :: int, state) :: {:ok :: label, stats :: srt_socket_stats} | {:error :: label, reason :: string}
 
