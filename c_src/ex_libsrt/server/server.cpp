@@ -94,11 +94,14 @@ void Server::Run(const std::string& address,
 
 std::unique_ptr<SrtSocketStats> Server::ReadSocketStats(int socket,
                                                         bool clear_intervals) {
-  if (active_sockets.find(socket) != std::end(active_sockets)) {
-    return readSrtSocketStats(socket, clear_intervals);
+  {
+    std::lock_guard lock(active_sockets_mutex);
+    if (active_sockets.find(socket) == std::end(active_sockets)) {
+      return nullptr;
+    }
   }
 
-  return nullptr;
+  return readSrtSocketStats(socket, clear_intervals);
 }
 
 void Server::Stop() {
@@ -112,14 +115,17 @@ void Server::Stop() {
 }
 
 void Server::CloseConnection(int connection_id) {
-  if (auto connection = active_sockets.find(connection_id);
-      connection != std::end(active_sockets)) {
-    srt_epoll_remove_usock(epoll, connection_id);
-    srt_close(connection_id);
-
-    active_sockets.erase(connection_id);
-    this->on_socket_disconnected((SrtSocket)connection_id);
+  {
+    std::lock_guard lock(active_sockets_mutex);
+    if (active_sockets.erase(connection_id) == 0) {
+      return;
+    }
   }
+
+  srt_epoll_remove_usock(epoll, connection_id);
+  srt_close(connection_id);
+
+  this->on_socket_disconnected((SrtSocket)connection_id);
 }
 
 void Server::RunEpoll() {
@@ -246,8 +252,13 @@ int Server::OnNewConnection(SRTSOCKET ns,
     srt_setsockflag(ns, SRTO_LATENCY, &latency_ms, sizeof latency_ms);
   }
 
-  if (!accept_all && stream_ids_whitelist.find(std::string(streamid)) ==
-                         stream_ids_whitelist.end()) {
+  bool whitelisted = accept_all;
+  if (!whitelisted) {
+    std::lock_guard lock(whitelist_mutex);
+    whitelisted = stream_ids_whitelist.find(std::string(streamid)) !=
+                  stream_ids_whitelist.end();
+  }
+  if (!whitelisted) {
     srt_setrejectreason(ns, SRT_REJC_PREDEFINED + 403);
     on_client_rejected(streamid);
     return -1;
@@ -274,7 +285,10 @@ bool Server::BindSocket(SrtSocket socket, std::string& stream_id) {
   stream_id = it->second.first;
   pending_connections.erase(it);
 
-  active_sockets.insert(socket);
+  {
+    std::lock_guard sockets_lock(active_sockets_mutex);
+    active_sockets.insert(socket);
+  }
   const int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
   srt_epoll_add_usock(epoll, socket, &read_modes);
 
@@ -294,10 +308,23 @@ bool Server::IsSocketClosed(Server::SrtSocket socket) const {
 }
 
 void Server::DisconnectSocket(Server::SrtSocket socket) {
+  {
+    std::lock_guard lock(active_sockets_mutex);
+    if (active_sockets.erase(socket) == 0) {
+      // Either CloseConnection got here first, and it removes the socket from the
+      // epoll and closes it itself, or this is the listening socket, which is in
+      // the epoll but never in active_sockets. Drop a broken listener from the
+      // epoll so it can't keep waking the loop; Stop closes it.
+      if (IsListeningSocket(socket)) {
+        srt_epoll_remove_usock(epoll, socket);
+      }
+      return;
+    }
+  }
+
   srt_epoll_remove_usock(epoll, socket);
   srt_close(socket);
 
-  active_sockets.erase(socket);
   this->on_socket_disconnected(socket);
 }
 

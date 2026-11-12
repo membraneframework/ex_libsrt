@@ -76,10 +76,12 @@ public:
   }
 
   void AddStreamIdToWhitelist(std::string stream_id) {
+    std::lock_guard lock(whitelist_mutex);
     this->stream_ids_whitelist.insert(stream_id);
   }
 
   void RemoveStreamIdFromWhitelist(std::string stream_id) {
+    std::lock_guard lock(whitelist_mutex);
     this->stream_ids_whitelist.erase(stream_id);
   }
 
@@ -115,7 +117,9 @@ private:
   std::thread epoll_loop;
 
 private:
+  // touched by the epoll thread and NIF threads
   std::set<SrtSocket> active_sockets;
+  std::mutex active_sockets_mutex;
   std::function<void(SrtSocket)> on_socket_disconnected;
   std::function<void(SrtSocket, const char*, int)> on_socket_data;
   std::function<void(const char*)> on_client_rejected;
@@ -124,6 +128,7 @@ private:
   std::function<void(const std::string&)> on_fatal_error;
   bool accept_all = false;
   std::unordered_set<std::string> stream_ids_whitelist = {};
+  std::mutex whitelist_mutex;
 
   using PendingEntry =
       std::pair<std::string, std::chrono::steady_clock::time_point>;
