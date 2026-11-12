@@ -144,24 +144,26 @@ void Server::RunEpoll() {
                            &sockets_len,
                            broken_sockets.data(),
                            &broken_sockets_len,
-                           1000,
+                           EPOLL_WAIT_TIMEOUT_MS,
                            0,
                            0,
                            0,
                            0);
 
     if (n < 1) {
-      // clear out the time out error
+      // clear out the time out error, and still sweep the pending
+      // connections below
       srt_clearlasterror();
-
-      continue;
+      sockets_len = 0;
+      broken_sockets_len = 0;
     }
 
     for (int i = 0; i < sockets_len; i++) {
       auto socket_state = srt_getsockstate(sockets[i]);
 
       if (socket_state == SRTS_LISTENING) {
-        // do nothing
+        // Already handled in the listen callback; pop it so epoll doesn't spin.
+        srt_accept(sockets[i], nullptr, nullptr);
       } else if (socket_state == SRTS_BROKEN || socket_state == SRTS_CLOSED) {
         DisconnectSocket(sockets[i]);
       } else if (socket_state == SRTS_CONNECTED) {

@@ -14,6 +14,8 @@
 #include <unordered_set>
 
 #define BIND_RECEIVER_TIMEOUT_SEC 1
+// How often the pending connections are checked against that timeout
+#define EPOLL_WAIT_TIMEOUT_MS 100
 
 extern "C" {
 #include <arpa/inet.h>
