@@ -12,6 +12,9 @@ typedef struct SRTState {
   UnifexEnv* env;
   std::unordered_map<int, UnifexPid> conn_receivers;
   std::mutex conn_receivers_mutex;
+  // The server sends on env from several threads, and unifex_send is not
+  // thread-safe on one env.
+  std::mutex send_mutex;
   std::unique_ptr<Server> server;
   std::unique_ptr<Client> client;
 } State;
