@@ -1,7 +1,7 @@
 defmodule ExLibSRT.MixProject do
   use Mix.Project
 
-  @version "0.2.2"
+  @version "0.2.3"
   @github_url "https://github.com/membraneframework/ex_libsrt"
 
   def project do
