@@ -109,6 +109,46 @@ defmodule ExLibSRT.ServerTest do
     end
 
     @tag :srt_tools_required
+    test "accept more connections over time than the listen backlog", ctx do
+      :ok = Server.add_stream_id_to_whitelist(ctx.server, "stream_id")
+
+      # The listen backlog is 100. Only one caller is connected at a time.
+      for i <- 1..101 do
+        proxy = Transmit.start_streaming_proxy(ctx.udp_port, ctx.srt_port, "stream_id")
+        on_exit(fn -> stop_proxy_safe(proxy) end)
+        proxy_ref = Port.monitor(proxy)
+
+        assert_receive {:srt_server_conn, conn_id, "stream_id"},
+                       1_000,
+                       "connection #{i} was not accepted"
+
+        :ok = Server.bind_with_process(ctx.server, conn_id)
+        :ok = Server.close_server_connection(conn_id, ctx.server)
+
+        assert_receive {:srt_server_conn_closed, ^conn_id}, 1_000
+        assert_receive {:DOWN, ^proxy_ref, :port, ^proxy, _reason}, 2_000
+      end
+    end
+
+    @tag :srt_tools_required
+    test "do not spin the CPU while a connection is open", ctx do
+      :ok = Server.add_stream_id_to_whitelist(ctx.server, "stream_id")
+
+      proxy = Transmit.start_streaming_proxy(ctx.udp_port, ctx.srt_port, "stream_id")
+      on_exit(fn -> stop_proxy_safe(proxy) end)
+
+      assert_receive {:srt_server_conn, conn_id, "stream_id"}, 1_000
+      :ok = Server.bind_with_process(ctx.server, conn_id)
+
+      # CPU time of all threads in this OS process, the server's included
+      {cpu_before, _since_last_call} = :erlang.statistics(:runtime)
+      Process.sleep(1_000)
+      {cpu_after, _since_last_call} = :erlang.statistics(:runtime)
+
+      assert cpu_after - cpu_before < 250
+    end
+
+    @tag :srt_tools_required
     test "send closed connection notification", ctx do
       :ok = Server.add_stream_id_to_whitelist(ctx.server, "closing_stream_id")
 

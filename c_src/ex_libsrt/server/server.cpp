@@ -94,11 +94,14 @@ void Server::Run(const std::string& address,
 
 std::unique_ptr<SrtSocketStats> Server::ReadSocketStats(int socket,
                                                         bool clear_intervals) {
-  if (active_sockets.find(socket) != std::end(active_sockets)) {
-    return readSrtSocketStats(socket, clear_intervals);
+  {
+    std::lock_guard lock(active_sockets_mutex);
+    if (active_sockets.find(socket) == std::end(active_sockets)) {
+      return nullptr;
+    }
   }
 
-  return nullptr;
+  return readSrtSocketStats(socket, clear_intervals);
 }
 
 void Server::Stop() {
@@ -112,14 +115,17 @@ void Server::Stop() {
 }
 
 void Server::CloseConnection(int connection_id) {
-  if (auto connection = active_sockets.find(connection_id);
-      connection != std::end(active_sockets)) {
-    srt_epoll_remove_usock(epoll, connection_id);
-    srt_close(connection_id);
-
-    active_sockets.erase(connection_id);
-    this->on_socket_disconnected((SrtSocket)connection_id);
+  {
+    std::lock_guard lock(active_sockets_mutex);
+    if (active_sockets.erase(connection_id) == 0) {
+      return;
+    }
   }
+
+  srt_epoll_remove_usock(epoll, connection_id);
+  srt_close(connection_id);
+
+  this->on_socket_disconnected((SrtSocket)connection_id);
 }
 
 void Server::RunEpoll() {
@@ -144,24 +150,26 @@ void Server::RunEpoll() {
                            &sockets_len,
                            broken_sockets.data(),
                            &broken_sockets_len,
-                           1000,
+                           EPOLL_WAIT_TIMEOUT_MS,
                            0,
                            0,
                            0,
                            0);
 
     if (n < 1) {
-      // clear out the time out error
+      // clear out the time out error, and still sweep the pending
+      // connections below
       srt_clearlasterror();
-
-      continue;
+      sockets_len = 0;
+      broken_sockets_len = 0;
     }
 
     for (int i = 0; i < sockets_len; i++) {
       auto socket_state = srt_getsockstate(sockets[i]);
 
       if (socket_state == SRTS_LISTENING) {
-        // do nothing
+        // Already handled in the listen callback; pop it so epoll doesn't spin.
+        srt_accept(sockets[i], nullptr, nullptr);
       } else if (socket_state == SRTS_BROKEN || socket_state == SRTS_CLOSED) {
         DisconnectSocket(sockets[i]);
       } else if (socket_state == SRTS_CONNECTED) {
@@ -246,8 +254,13 @@ int Server::OnNewConnection(SRTSOCKET ns,
     srt_setsockflag(ns, SRTO_LATENCY, &latency_ms, sizeof latency_ms);
   }
 
-  if (!accept_all && stream_ids_whitelist.find(std::string(streamid)) ==
-                         stream_ids_whitelist.end()) {
+  bool whitelisted = accept_all;
+  if (!whitelisted) {
+    std::lock_guard lock(whitelist_mutex);
+    whitelisted = stream_ids_whitelist.find(std::string(streamid)) !=
+                  stream_ids_whitelist.end();
+  }
+  if (!whitelisted) {
     srt_setrejectreason(ns, SRT_REJC_PREDEFINED + 403);
     on_client_rejected(streamid);
     return -1;
@@ -274,7 +287,10 @@ bool Server::BindSocket(SrtSocket socket, std::string& stream_id) {
   stream_id = it->second.first;
   pending_connections.erase(it);
 
-  active_sockets.insert(socket);
+  {
+    std::lock_guard sockets_lock(active_sockets_mutex);
+    active_sockets.insert(socket);
+  }
   const int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
   srt_epoll_add_usock(epoll, socket, &read_modes);
 
@@ -294,10 +310,21 @@ bool Server::IsSocketClosed(Server::SrtSocket socket) const {
 }
 
 void Server::DisconnectSocket(Server::SrtSocket socket) {
+  {
+    std::lock_guard lock(active_sockets_mutex);
+    if (active_sockets.erase(socket) == 0) {
+      // CloseConnection has already closed the socket, or it is the broken
+      // listening socket, which must leave the epoll to stop waking the loop.
+      if (IsListeningSocket(socket)) {
+        srt_epoll_remove_usock(epoll, socket);
+      }
+      return;
+    }
+  }
+
   srt_epoll_remove_usock(epoll, socket);
   srt_close(socket);
 
-  active_sockets.erase(socket);
   this->on_socket_disconnected(socket);
 }
 

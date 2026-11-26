@@ -27,7 +27,6 @@ defmodule ExLibSRT.Client do
   """
 
   use Agent
-  require Logger
 
   @type t :: pid()
 
